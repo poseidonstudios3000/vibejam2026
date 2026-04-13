@@ -3,73 +3,108 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vibe Jam 2026</title>
+  <title>Vibe Jam 2026 — Physics Playground</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
     canvas { display: block; }
+
     #hud {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0; width: 100%; height: 100%;
       pointer-events: none;
       z-index: 10;
       font-family: 'Courier New', monospace;
       color: #0ff;
     }
+
     #fps-counter {
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      font-size: 12px;
-      opacity: 0.7;
+      position: absolute; top: 8px; left: 8px;
+      font-size: 12px; opacity: 0.7;
     }
+
     #debug-info {
-      position: absolute;
-      top: 28px;
-      left: 8px;
-      font-size: 11px;
-      opacity: 0.5;
+      position: absolute; top: 28px; left: 8px;
+      font-size: 11px; opacity: 0.6; line-height: 1.5;
       display: none;
     }
+
     #crosshair {
-      position: absolute;
-      top: 50%;
-      left: 50%;
+      position: absolute; top: 50%; left: 50%;
+      width: 6px; height: 6px;
       transform: translate(-50%, -50%);
-      width: 20px;
-      height: 20px;
-      opacity: 0.4;
+      border-radius: 50%;
+      background: rgba(0, 255, 204, 0.5);
+      box-shadow: 0 0 6px rgba(0, 255, 204, 0.3);
     }
-    #crosshair::before, #crosshair::after {
-      content: '';
-      position: absolute;
-      background: #fff;
-    }
-    #crosshair::before {
-      width: 2px;
-      height: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-    #crosshair::after {
-      width: 100%;
-      height: 2px;
-      top: 50%;
-      transform: translateY(-50%);
-    }
+
     #click-prompt {
-      position: absolute;
-      top: 50%;
-      left: 50%;
+      position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      font-size: 18px;
-      color: #fff;
-      opacity: 0.8;
+      font-size: 18px; color: #fff; opacity: 0.8;
       text-align: center;
-      pointer-events: none;
+    }
+
+    /* Controls legend — 50% bigger */
+    #controls-hint {
+      position: absolute; bottom: 14px; left: 14px;
+      font-size: 16px; color: #8af; opacity: 0.75;
+      line-height: 1.7;
+    }
+    #controls-hint span { color: #0ff; font-weight: bold; }
+
+    /* Settings panel — always visible */
+    #settings-panel {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(5, 5, 20, 0.9);
+      border: 1px solid rgba(0, 255, 255, 0.2);
+      border-radius: 6px;
+      padding: 14px 18px;
+      pointer-events: auto;
+      min-width: 230px;
+    }
+    #settings-panel h3 {
+      font-size: 12px; color: #0ff;
+      margin-bottom: 12px;
+      text-transform: uppercase; letter-spacing: 2px;
+    }
+
+    .slider-row { margin-bottom: 10px; }
+    .slider-row label {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: #8af; margin-bottom: 4px;
+    }
+    .slider-row label .val { color: #0ff; }
+
+    .slider-row input[type="range"] {
+      width: 100%; height: 4px;
+      -webkit-appearance: none; appearance: none;
+      background: rgba(0, 255, 255, 0.15);
+      border-radius: 2px; outline: none;
+    }
+    .slider-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #0ff; cursor: pointer; border: 2px solid #001a1a;
+    }
+    .slider-row input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #0ff; cursor: pointer; border: 2px solid #001a1a;
+    }
+
+    .select-row { margin-bottom: 6px; }
+    .select-row label {
+      display: block; font-size: 11px; color: #8af; margin-bottom: 4px;
+    }
+    .select-row select {
+      width: 100%; padding: 4px 6px;
+      font-family: 'Courier New', monospace; font-size: 11px;
+      background: rgba(0, 20, 30, 0.9); color: #0ff;
+      border: 1px solid rgba(0, 255, 255, 0.2);
+      border-radius: 3px; outline: none; cursor: pointer;
+    }
+    .select-row select option {
+      background: #0a0a1e; color: #0ff;
     }
   </style>
 </head>
@@ -79,11 +114,40 @@
     <div id="debug-info"></div>
     <div id="crosshair"></div>
     <div id="click-prompt">Click to play</div>
+
+    <div id="settings-panel">
+      <h3>Settings</h3>
+      <div class="slider-row">
+        <label>Walk Speed <span class="val" id="speed-val">8</span></label>
+        <input type="range" id="speed-slider" min="3" max="25" step="0.5" value="8">
+      </div>
+      <div class="slider-row">
+        <label>Low-G Strength <span class="val" id="grav-val">15</span></label>
+        <input type="range" id="grav-slider" min="0" max="25" step="0.5" value="15">
+      </div>
+      <div class="select-row">
+        <label>Color Theme</label>
+        <select id="theme-select">
+          <option value="dark">Dark (default)</option>
+          <option value="soft">Soft</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="controls-hint">
+      <span>WASD</span> move &nbsp;
+      <span>SHIFT</span> sprint &nbsp;
+      <span>SPACE</span> jump / double jump &nbsp;
+      <span>Q</span> dash &nbsp;
+      <span>C</span> slide / ground slam<br>
+      <span>MOUSE</span> look &nbsp;
+      <span>`</span> debug &nbsp;
+      <span>H</span> hide controls
+    </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>
-
-  <!-- Vibe Jam 2026 Widget -->
   <script async src="https://vibej.am/2026/widget.js"></script>
 </body>
 </html>

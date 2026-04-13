@@ -1,9 +1,13 @@
 const keys = {};
+const justPressedKeys = {};
 let mx = 0;
 let my = 0;
 let pointerLocked = false;
 
 window.addEventListener('keydown', (e) => {
+  if (!keys[e.code]) {
+    justPressedKeys[e.code] = true;
+  }
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
     e.preventDefault();
@@ -32,12 +36,22 @@ export const input = {
     return !!keys[code];
   },
 
+  justPressed(code) {
+    return !!justPressedKeys[code];
+  },
+
   mouseDelta() {
     const dx = mx;
     const dy = my;
     mx = 0;
     my = 0;
     return { x: dx, y: dy };
+  },
+
+  flush() {
+    for (const key in justPressedKeys) {
+      delete justPressedKeys[key];
+    }
   },
 
   get isPointerLocked() {

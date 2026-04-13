@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { clock, onResize } from './utils.js';
 import { input } from './input.js';
-import { initPhysics, stepPhysics, getWorld, getPlayerBody } from './physics.js';
-import { createWorld } from './world.js';
-import { createPlayer, updatePlayer, toggleCameraMode, getPlayerPosition } from './player.js';
+import { initPhysics, stepPhysics, getWorld, getPlayerBody, onBounce, onPush, onBreak } from './physics.js';
+import { createWorld, updateWorld, getMovingPlatforms } from './world.js';
+import { createPlayer, updatePlayer, updateDebris, setMovingPlatforms, getPlayerPosition, getPlayerState } from './player.js';
 import { initPortals, updatePortals, getSpawnPosition } from './portal.js';
 import { initUI, updateUI } from './ui.js';
+import { sfx } from './audio.js';
 
 // --- Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -19,14 +20,27 @@ document.body.prepend(renderer.domElement);
 
 // --- Scene + Camera ---
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
 
 // --- Init systems ---
-const { world, playerBody } = initPhysics();
+initPhysics();
 createWorld(scene);
-const playerMesh = createPlayer(scene);
-const { isPortalEntry } = initPortals(scene);
+createPlayer(scene);
+setMovingPlatforms(getMovingPlatforms());
+initPortals(scene);
 initUI();
+
+// --- Audio callbacks ---
+let pushThrottle = 0;
+onBounce(() => sfx.bounce());
+onPush(() => {
+  const now = performance.now();
+  if (now - pushThrottle > 150) {
+    sfx.push();
+    pushThrottle = now;
+  }
+});
+onBreak(() => sfx.slamImpact());
 
 // Spawn position
 const spawn = getSpawnPosition();
@@ -41,25 +55,19 @@ renderer.domElement.addEventListener('click', () => {
   input.requestPointerLock(renderer.domElement);
 });
 
-// --- Camera mode toggle (V key with debounce) ---
-let vWasDown = false;
-function checkCameraToggle() {
-  const vDown = input.isDown('KeyV');
-  if (vDown && !vWasDown) toggleCameraMode();
-  vWasDown = vDown;
-}
-
 // --- Game loop ---
 function loop() {
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05); // cap delta
+  const dt = Math.min(clock.getDelta(), 0.05);
 
   stepPhysics(dt);
-  checkCameraToggle();
+  updateWorld(dt);
   updatePlayer(dt, camera);
+  updateDebris(dt);
   updatePortals(dt, getPlayerPosition());
-  updateUI(getPlayerPosition(), getWorld().bodies.length);
+  updateUI(getPlayerPosition(), getWorld().bodies.length, getPlayerState());
 
+  input.flush();
   renderer.render(scene, camera);
 }
 
