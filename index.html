@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vibe Jam 2026</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+      font-family: 'Courier New', monospace;
+      color: #0ff;
+    }
+    #fps-counter {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      font-size: 12px;
+      opacity: 0.7;
+    }
+    #debug-info {
+      position: absolute;
+      top: 28px;
+      left: 8px;
+      font-size: 11px;
+      opacity: 0.5;
+      display: none;
+    }
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px;
+      height: 20px;
+      opacity: 0.4;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: #fff;
+    }
+    #crosshair::before {
+      width: 2px;
+      height: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    #crosshair::after {
+      width: 100%;
+      height: 2px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    #click-prompt {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 18px;
+      color: #fff;
+      opacity: 0.8;
+      text-align: center;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div id="fps-counter">60 FPS</div>
+    <div id="debug-info"></div>
+    <div id="crosshair"></div>
+    <div id="click-prompt">Click to play</div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+
+  <!-- Vibe Jam 2026 Widget -->
+  <script async src="https://vibej.am/2026/widget.js"></script>
+</body>
+</html>
