@@ -105,9 +105,9 @@ function applyHudTheme(themeName) {
   accents.forEach(s => s.style.color = t.accent);
 }
 
-export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon, playerHP) {
+export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon, playerHP, kills) {
   const npcEl = document.getElementById('npc-counter');
-  if (npcEl) npcEl.textContent = `Enemies: ${npcCount ?? 0}`;
+  if (npcEl) npcEl.textContent = `Kills: ${kills ?? 0}   Enemies left: ${npcCount ?? 0}`;
   const wpnEl = document.getElementById('weapon-indicator');
   if (wpnEl && weapon) wpnEl.textContent = `[${weapon.key === 'pistol' ? 1 : weapon.key === 'shotgun' ? 2 : 3}] ${weapon.name}`;
 

@@ -1,11 +1,14 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { clock, onResize } from './utils.js';
 import { input } from './input.js';
 import { initPhysics, stepPhysics, getWorld, getPlayerBody, onBounce, onPush, onBreak } from './physics.js';
 import { createWorld, createMap1, updateWorld, getMovingPlatforms } from './world.js';
 import { createPlayer, updatePlayer, updateDebris, setMovingPlatforms, getPlayerPosition, getPlayerState, getCurrentWeapon, getPlayerHP } from './player.js';
 import { initPortals, updatePortals, getSpawnPosition } from './portal.js';
-import { initNPCs, updateNPCs, aliveNPCCount } from './npc.js';
+import { initNPCs, updateNPCs, aliveNPCCount, getKillCount } from './npc.js';
 import { initUI, updateUI } from './ui.js';
 import { sfx } from './audio.js';
 
@@ -22,6 +25,18 @@ document.body.prepend(renderer.domElement);
 // --- Scene + Camera ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
+
+// --- Post-processing: bloom for dark scene moodiness ---
+const composer = new EffectComposer(renderer);
+composer.setSize(window.innerWidth, window.innerHeight);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.8,  // strength
+  0.5,  // radius
+  0.85, // threshold
+);
+composer.addPass(bloomPass);
 
 // --- Map selection via URL param ---
 const mapName = new URLSearchParams(window.location.search).get('map') || 'map1';
@@ -57,7 +72,11 @@ const body = getPlayerBody();
 body.position.set(spawn.x, spawn.y, spawn.z);
 
 // --- Resize ---
-window.addEventListener('resize', () => onResize(camera, renderer));
+window.addEventListener('resize', () => {
+  onResize(camera, renderer);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  bloomPass.setSize(window.innerWidth, window.innerHeight);
+});
 
 // --- Pointer lock ---
 renderer.domElement.addEventListener('click', () => {
@@ -75,10 +94,10 @@ function loop() {
   updateDebris(dt);
   updatePortals(dt, getPlayerPosition());
   updateNPCs(dt, getPlayerPosition());
-  updateUI(getPlayerPosition(), getWorld().bodies.length, getPlayerState(), aliveNPCCount(), getCurrentWeapon(), getPlayerHP());
+  updateUI(getPlayerPosition(), getWorld().bodies.length, getPlayerState(), aliveNPCCount(), getCurrentWeapon(), getPlayerHP(), getKillCount());
 
   input.flush();
-  renderer.render(scene, camera);
+  composer.render();
 }
 
 clock.start();

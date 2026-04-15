@@ -5,6 +5,7 @@ import { getPlayerBody, isOnIce, slamDamageAt } from './physics.js';
 import { sfx } from './audio.js';
 import { settings } from './settings.js';
 import { getNPCHitboxes, damageNPC, onPlayerHit } from './npc.js';
+import { getBlockers } from './world.js';
 
 // --- Tuning ---
 const SPRINT_MULTIPLIER = 1.75;
@@ -85,6 +86,13 @@ const raycaster = new THREE.Raycaster();
 const tracers = [];
 const projectiles = [];
 let cameraRef = null;
+
+// Muzzle-flash light pool
+const MUZZLE_LIGHT_COUNT = 6;
+const MUZZLE_FLASH_DURATION = 0.08;
+const MUZZLE_FLASH_DECAY = 0.3;
+const muzzleLightPool = [];
+const activeMuzzleLights = [];
 
 // Weapons
 const WEAPONS = {
@@ -225,6 +233,14 @@ export function createPlayer(scene) {
 
   mesh = buildHumanoid(0x00ffcc, 0x004433);
   scene.add(mesh);
+
+  // Build muzzle-flash light pool
+  for (let i = 0; i < MUZZLE_LIGHT_COUNT; i++) {
+    const light = new THREE.PointLight(0xffcc66, 0, 14, 2);
+    light.visible = false;
+    scene.add(light);
+    muzzleLightPool.push(light);
+  }
 
   // Dash ring
   const ringGeo = new THREE.TorusGeometry(0.5, 0.05, 8, 24);
@@ -541,6 +557,7 @@ export function updatePlayer(dt, camera) {
   }
   updateTracers(dt);
   updateProjectiles(dt);
+  updateMuzzleFlashes(dt);
 }
 
 const AIM_PIVOT_HEIGHT = 2.5; // Target sits above player's head, player appears below crosshair
@@ -640,7 +657,12 @@ function fireShot() {
     muzzle.copy(mesh.position);
   }
 
-  const targets = getNPCHitboxes();
+  // Spawn a muzzle-flash PointLight — one per shot (not per pellet)
+  spawnMuzzleFlash(muzzle, w);
+
+  const npcTargets = getNPCHitboxes();
+  const blockers = getBlockers();
+  const targets = [...npcTargets, ...blockers];
 
   for (let i = 0; i < w.pellets; i++) {
     const dir = baseDir.clone();
@@ -661,6 +683,7 @@ function fireShot() {
     if (hits.length > 0) {
       const hit = hits[0];
       endPoint = hit.point.clone();
+      // If the closest hit is an NPC body part, damage it. If it's a blocker, no damage.
       hitNpc = hit.object.userData.npcRef ?? null;
     } else {
       endPoint = origin.clone().addScaledVector(dir, SHOT_RANGE);
@@ -720,6 +743,41 @@ function spawnTracer(from, to, weapon) {
 
   sceneRef.add(cyl);
   tracers.push({ obj: cyl, mat, life: TRACER_LIFE });
+}
+
+function spawnMuzzleFlash(position, weapon) {
+  const light = muzzleLightPool.find((l) => !l.visible);
+  if (!light) return; // pool exhausted — skip (rare)
+  light.position.copy(position);
+  // Weapon-tinted flash: pistol yellow, shotgun orange, rocket blue
+  const color = weapon?.glowColor ?? 0xffcc66;
+  light.color.setHex(color);
+  // Rocket gets a much bigger, longer flash
+  const isRocket = weapon?.name === 'Rocket Launcher';
+  light.intensity = isRocket ? 18 : 10;
+  light.distance = isRocket ? 22 : 14;
+  light.visible = true;
+  activeMuzzleLights.push({ light, t: 0, maxT: isRocket ? 0.5 : MUZZLE_FLASH_DECAY, peak: light.intensity });
+}
+
+function updateMuzzleFlashes(dt) {
+  for (let i = activeMuzzleLights.length - 1; i >= 0; i--) {
+    const m = activeMuzzleLights[i];
+    m.t += dt;
+    // Hold briefly at peak, then decay
+    const hold = MUZZLE_FLASH_DURATION;
+    if (m.t < hold) {
+      m.light.intensity = m.peak;
+    } else {
+      const k = 1 - (m.t - hold) / (m.maxT - hold);
+      m.light.intensity = Math.max(0, m.peak * k);
+    }
+    if (m.t >= m.maxT) {
+      m.light.visible = false;
+      m.light.intensity = 0;
+      activeMuzzleLights.splice(i, 1);
+    }
+  }
 }
 
 function spawnProjectile(from, to, weapon, pendingHit) {

@@ -3,7 +3,7 @@
 export const settings = {
   walkSpeed: 8,
   gravityZoneStrength: 15,
-  colorTheme: 'light', // 'dark' | 'light' | 'soft'
+  colorTheme: 'dark', // 'dark' | 'light' | 'soft'
   invertMouseY: false, // false = normal (default, mouse up looks up); true = inverted
   pitchClampDeg: 25, // max up/down aim angle in degrees
 };

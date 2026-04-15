@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { buildHumanoid } from './player.js';
+import { getBlockers } from './world.js';
+
+const npcRaycaster = new THREE.Raycaster();
 
 const npcs = [];
 let sceneRef = null;
@@ -22,6 +25,9 @@ const NPC_PROJECTILE_MAX_LIFE = 2.0;
 
 const npcProjectiles = [];
 let playerDamageCallback = null;
+let killCount = 0;
+
+export function getKillCount() { return killCount; }
 
 export function onPlayerHit(fn) { playerDamageCallback = fn; }
 
@@ -34,9 +40,10 @@ const SPAWNS_SANDBOX = [
 ];
 
 const SPAWNS_MAP1 = [
-  { x: -8, z: -8, color: 0xff4466, emissive: 0x441122 },
-  { x:  8, z: -8, color: 0x9944ff, emissive: 0x221144 },
-  { x:  0, z:  10, color: 0xffaa33, emissive: 0x442211 },
+  { x: -10, z: -12, color: 0xff4466, emissive: 0x441122 },
+  { x:  12, z: -10, color: 0x9944ff, emissive: 0x221144 },
+  { x:  10, z:  12, color: 0xffaa33, emissive: 0x442211 },
+  { x:   0, z:  15, color: 0x44ffaa, emissive: 0x114433 },
 ];
 
 export function initNPCs(scene, mapName = 'sandbox') {
@@ -219,23 +226,42 @@ function fireNPCProjectile(npc, playerPos) {
 }
 
 function updateNPCProjectiles(dt, playerPos) {
+  const blockers = getBlockers();
   for (let i = npcProjectiles.length - 1; i >= 0; i--) {
     const p = npcProjectiles[i];
     p.life -= dt;
-    p.mesh.position.addScaledVector(p.dir, p.speed * dt);
 
-    // Check hit against player (point-in-sphere)
-    const dx = p.mesh.position.x - playerPos.x;
-    const dy = p.mesh.position.y - (playerPos.y + 0.4);
-    const dz = p.mesh.position.z - playerPos.z;
-    const dist2 = dx * dx + dy * dy + dz * dz;
-    const hit = dist2 < NPC_PROJECTILE_HIT_RADIUS * NPC_PROJECTILE_HIT_RADIUS;
+    const prev = p.mesh.position.clone();
+    const step = p.speed * dt;
+    const next = prev.clone().addScaledVector(p.dir, step);
 
-    if (hit) {
-      if (playerDamageCallback) playerDamageCallback(p.damage);
+    // Check for a wall between prev and next
+    let blockerHit = false;
+    if (blockers.length > 0) {
+      npcRaycaster.ray.origin.copy(prev);
+      npcRaycaster.ray.direction.copy(p.dir);
+      npcRaycaster.far = step;
+      const wallHits = npcRaycaster.intersectObjects(blockers, false);
+      if (wallHits.length > 0) {
+        p.mesh.position.copy(wallHits[0].point);
+        blockerHit = true;
+      }
     }
 
-    if (hit || p.life <= 0) {
+    if (!blockerHit) p.mesh.position.copy(next);
+
+    // Hit against player (point-in-sphere)
+    let playerHit = false;
+    if (!blockerHit) {
+      const dx = p.mesh.position.x - playerPos.x;
+      const dy = p.mesh.position.y - (playerPos.y + 0.4);
+      const dz = p.mesh.position.z - playerPos.z;
+      const dist2 = dx * dx + dy * dy + dz * dz;
+      playerHit = dist2 < NPC_PROJECTILE_HIT_RADIUS * NPC_PROJECTILE_HIT_RADIUS;
+      if (playerHit && playerDamageCallback) playerDamageCallback(p.damage);
+    }
+
+    if (blockerHit || playerHit || p.life <= 0) {
       sceneRef.remove(p.mesh);
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();
@@ -266,6 +292,7 @@ export function damageNPC(npc, amount) {
   flashHit(npc);
   if (npc.hp <= 0) {
     npc.dead = true;
+    killCount++;
     if (npc.hpSprite) npc.hpSprite.visible = false;
   }
 }
