@@ -139,4 +139,51 @@ export const sfx = {
     playNoise(0.06, 0.06, 'lowpass', 300);
     playTone(60 + Math.random() * 30, 0.08, 'sine', 0.05);
   },
+
+  // --- Gunfire ---
+  pistol() {
+    // Sharp, snappy crack
+    const c = getCtx();
+    playNoise(0.05, 0.2, 'highpass', 2500);
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(900, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(180, c.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.18, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.08);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.08);
+  },
+
+  shotgun() {
+    // Big, chunky blast with a low boom
+    const c = getCtx();
+    playNoise(0.18, 0.4, 'bandpass', 1200);
+    playNoise(0.25, 0.22, 'lowpass', 350);
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(50, c.currentTime + 0.18);
+    gain.gain.setValueAtTime(0.3, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.22);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.22);
+  },
+
+  rocket() {
+    // Whoosh launch — downward sweep + hiss
+    const c = getCtx();
+    playNoise(0.5, 0.18, 'bandpass', 800);
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(500, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(80, c.currentTime + 0.4);
+    gain.gain.setValueAtTime(0.25, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.5);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.5);
+  },
 };

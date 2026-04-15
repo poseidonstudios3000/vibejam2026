@@ -31,11 +31,24 @@
 
     #crosshair {
       position: absolute; top: 50%; left: 50%;
-      width: 6px; height: 6px;
+      width: 20px; height: 20px;
       transform: translate(-50%, -50%);
-      border-radius: 50%;
-      background: rgba(0, 255, 204, 0.5);
-      box-shadow: 0 0 6px rgba(0, 255, 204, 0.3);
+      pointer-events: none;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute;
+      background: #fff;
+      box-shadow: 0 0 0 1px #000, 0 0 6px rgba(0,0,0,0.8);
+    }
+    #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+    #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+    #crosshair-dot {
+      position: absolute; top: 50%; left: 50%;
+      width: 4px; height: 4px;
+      transform: translate(-50%, -50%);
+      background: #ff3344; border-radius: 50%;
+      box-shadow: 0 0 0 1px #000;
+      pointer-events: none;
     }
 
     #click-prompt {
@@ -111,8 +124,11 @@
 <body>
   <div id="hud">
     <div id="fps-counter">60 FPS</div>
+    <div id="npc-counter" style="position:absolute; top:28px; left:8px; font-size:13px; color:#ffaa33; font-weight:bold;">Enemies: 0</div>
+    <div id="weapon-indicator" style="position:absolute; bottom:90px; right:14px; font-size:16px; color:#fff; background:rgba(0,0,0,0.65); padding:8px 14px; border-radius:4px; font-weight:bold; letter-spacing:1px; z-index:20;">[1] Pistol</div>
     <div id="debug-info"></div>
     <div id="crosshair"></div>
+    <div id="crosshair-dot"></div>
     <div id="click-prompt">Click to play</div>
 
     <div id="settings-panel">
@@ -128,9 +144,16 @@
       <div class="select-row">
         <label>Color Theme</label>
         <select id="theme-select">
-          <option value="dark">Dark (default)</option>
+          <option value="light">Light (default)</option>
           <option value="soft">Soft</option>
-          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+      <div class="select-row">
+        <label>Mouse Y Axis</label>
+        <select id="invert-y-select">
+          <option value="inverted">Inverted — up looks down (default)</option>
+          <option value="normal">Normal — up looks up</option>
         </select>
       </div>
     </div>
@@ -142,6 +165,8 @@
       <span>Q</span> dash &nbsp;
       <span>C</span> slide / ground slam<br>
       <span>MOUSE</span> look &nbsp;
+      <span>LEFT CLICK</span> shoot &nbsp;
+      <span>1/2/3</span> pistol/shotgun/rocket &nbsp;
       <span>`</span> debug &nbsp;
       <span>H</span> hide controls
     </div>

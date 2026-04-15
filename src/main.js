@@ -3,8 +3,9 @@ import { clock, onResize } from './utils.js';
 import { input } from './input.js';
 import { initPhysics, stepPhysics, getWorld, getPlayerBody, onBounce, onPush, onBreak } from './physics.js';
 import { createWorld, updateWorld, getMovingPlatforms } from './world.js';
-import { createPlayer, updatePlayer, updateDebris, setMovingPlatforms, getPlayerPosition, getPlayerState } from './player.js';
+import { createPlayer, updatePlayer, updateDebris, setMovingPlatforms, getPlayerPosition, getPlayerState, getCurrentWeapon } from './player.js';
 import { initPortals, updatePortals, getSpawnPosition } from './portal.js';
+import { initNPCs, updateNPCs, aliveNPCCount } from './npc.js';
 import { initUI, updateUI } from './ui.js';
 import { sfx } from './audio.js';
 
@@ -28,6 +29,7 @@ createWorld(scene);
 createPlayer(scene);
 setMovingPlatforms(getMovingPlatforms());
 initPortals(scene);
+initNPCs(scene);
 initUI();
 
 // --- Audio callbacks ---
@@ -65,7 +67,8 @@ function loop() {
   updatePlayer(dt, camera);
   updateDebris(dt);
   updatePortals(dt, getPlayerPosition());
-  updateUI(getPlayerPosition(), getWorld().bodies.length, getPlayerState());
+  updateNPCs(dt, getPlayerPosition());
+  updateUI(getPlayerPosition(), getWorld().bodies.length, getPlayerState(), aliveNPCCount(), getCurrentWeapon());
 
   input.flush();
   renderer.render(scene, camera);

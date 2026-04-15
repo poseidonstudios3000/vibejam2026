@@ -33,9 +33,21 @@ export function initUI() {
     });
   }
 
+  // Invert Mouse Y dropdown
+  const invertYSelect = document.getElementById('invert-y-select');
+  if (invertYSelect) {
+    invertYSelect.value = settings.invertMouseY ? 'inverted' : 'normal';
+    invertYSelect.addEventListener('change', () => {
+      settings.invertMouseY = invertYSelect.value === 'inverted';
+    });
+  }
+
   // Theme dropdown
   const themeSelect = document.getElementById('theme-select');
   if (themeSelect) {
+    themeSelect.value = settings.colorTheme;
+    applyTheme(settings.colorTheme);
+    applyHudTheme(settings.colorTheme);
     themeSelect.addEventListener('change', () => {
       settings.colorTheme = themeSelect.value;
       applyTheme(themeSelect.value);
@@ -76,7 +88,12 @@ function applyHudTheme(themeName) {
   accents.forEach(s => s.style.color = t.accent);
 }
 
-export function updateUI(playerPos, bodyCount, playerState) {
+export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon) {
+  const npcEl = document.getElementById('npc-counter');
+  if (npcEl) npcEl.textContent = `Enemies: ${npcCount ?? 0}`;
+  const wpnEl = document.getElementById('weapon-indicator');
+  if (wpnEl && weapon) wpnEl.textContent = `[${weapon.key === 'pistol' ? 1 : weapon.key === 'shotgun' ? 2 : 3}] ${weapon.name}`;
+
   frames++;
   const now = performance.now();
   if (now - lastTime >= 500) {
