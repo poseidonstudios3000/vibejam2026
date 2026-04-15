@@ -66,6 +66,34 @@
     }
     #controls-hint span { color: #0ff; font-weight: bold; }
 
+    /* Top tabs */
+    #top-tabs {
+      position: absolute; top: 8px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 6px;
+      pointer-events: auto;
+      z-index: 25;
+    }
+    #top-tabs a {
+      font-family: 'Courier New', monospace;
+      font-size: 13px; letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 8px 18px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #ccd;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    #top-tabs a.active {
+      background: rgba(0, 255, 255, 0.15);
+      color: #0ff;
+      border-color: rgba(0, 255, 255, 0.45);
+      box-shadow: 0 0 8px rgba(0,255,255,0.25);
+    }
+    #top-tabs a:hover { color: #fff; }
+
     /* Settings panel — always visible */
     #settings-panel {
       position: absolute; top: 12px; right: 12px;
@@ -123,9 +151,17 @@
 </head>
 <body>
   <div id="hud">
+    <div id="top-tabs">
+      <a href="?map=map1" data-map="map1">Map 1</a>
+      <a href="?map=sandbox" data-map="sandbox">Sandbox</a>
+    </div>
     <div id="fps-counter">60 FPS</div>
     <div id="npc-counter" style="position:absolute; top:28px; left:8px; font-size:13px; color:#ffaa33; font-weight:bold;">Enemies: 0</div>
     <div id="weapon-indicator" style="position:absolute; bottom:90px; right:14px; font-size:16px; color:#fff; background:rgba(0,0,0,0.65); padding:8px 14px; border-radius:4px; font-weight:bold; letter-spacing:1px; z-index:20;">[1] Pistol</div>
+    <div id="player-hp" style="position:absolute; bottom:90px; left:14px; width:260px; height:28px; background:rgba(0,0,0,0.75); border:2px solid #fff; border-radius:4px; z-index:20; font-family:'Courier New',monospace; overflow:hidden;">
+      <div id="player-hp-fill" style="position:absolute; left:0; top:0; bottom:0; width:100%; background:#33ff55; transition:width 0.15s;"></div>
+      <div id="player-hp-text" style="position:relative; text-align:center; line-height:24px; color:#fff; font-weight:bold; font-size:15px; text-shadow:1px 1px 3px #000;">100 / 100 HP</div>
+    </div>
     <div id="debug-info"></div>
     <div id="crosshair"></div>
     <div id="crosshair-dot"></div>
@@ -141,6 +177,10 @@
         <label>Low-G Strength <span class="val" id="grav-val">15</span></label>
         <input type="range" id="grav-slider" min="0" max="25" step="0.5" value="15">
       </div>
+      <div class="slider-row">
+        <label>Pitch Clamp <span class="val"><span id="pitch-val">25</span>°</span></label>
+        <input type="range" id="pitch-slider" min="10" max="40" step="1" value="25">
+      </div>
       <div class="select-row">
         <label>Color Theme</label>
         <select id="theme-select">
@@ -152,8 +192,8 @@
       <div class="select-row">
         <label>Mouse Y Axis</label>
         <select id="invert-y-select">
-          <option value="inverted">Inverted — up looks down (default)</option>
-          <option value="normal">Normal — up looks up</option>
+          <option value="normal">Normal — up looks up (default)</option>
+          <option value="inverted">Inverted — up looks down</option>
         </select>
       </div>
     </div>

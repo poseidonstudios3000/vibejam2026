@@ -12,17 +12,14 @@ const movingPlatforms = [];
 let groundMesh, gridHelper, sunLight, ambientLight, fogRef, sceneRef;
 const labelSprites = [];
 
-export function createWorld(scene) {
+function setupEnvironment(scene) {
   sceneRef = scene;
 
-  // --- Sky gradient ---
   applySkyGradient(scene, themes.dark.sky);
 
-  // --- Fog ---
   scene.fog = new THREE.FogExp2(0x050510, 0.006);
   fogRef = scene.fog;
 
-  // --- Ground plane ---
   const groundGeo = new THREE.PlaneGeometry(200, 200, 40, 40);
   const groundMat = new THREE.MeshStandardMaterial({
     color: 0x111122, roughness: 0.85, metalness: 0.15,
@@ -36,7 +33,6 @@ export function createWorld(scene) {
   gridHelper.position.y = 0.02;
   scene.add(gridHelper);
 
-  // --- Lighting ---
   sunLight = new THREE.DirectionalLight(0xffeedd, 1.5);
   sunLight.position.set(40, 60, 20);
   sunLight.castShadow = true;
@@ -52,6 +48,10 @@ export function createWorld(scene) {
 
   ambientLight = new THREE.AmbientLight(0x334466, 0.6);
   scene.add(ambientLight);
+}
+
+export function createWorld(scene) {
+  setupEnvironment(scene);
 
   // ===========================================
   // PLAYGROUND ZONES
@@ -179,6 +179,58 @@ export function createWorld(scene) {
     createBreakable(scene, -4 + i * 2, 4 + Math.random() * 2, -30, 1.5, 0.4, 1.5, 30);
   }
   createPlatform(scene, 0, 6, -22, 4, 0.4, 4, 0xff4466);
+
+  return { groundMesh, sunLight, movingPlatforms };
+}
+
+// --- Map 1: minimal arena with perimeter walls + stairs to an upper platform ---
+export function createMap1(scene) {
+  setupEnvironment(scene);
+
+  createLabel(scene, 'MAP 1', 0, 5, -18);
+
+  // Square arena, 30x30 units, walls 3 units tall
+  const HALF = 15;
+  const WALL_H = 3;
+  const WALL_COLOR = 0x5577aa;
+
+  // Perimeter walls (fixed / static)
+  createWall(scene, 0, 0,  HALF, HALF * 2, WALL_H, 0.6, WALL_COLOR); // back (+Z)
+  createWall(scene, 0, 0, -HALF, HALF * 2, WALL_H, 0.6, WALL_COLOR); // front (-Z)
+  createWall(scene,  HALF, 0, 0, 0.6, WALL_H, HALF * 2, WALL_COLOR); // right
+  createWall(scene, -HALF, 0, 0, 0.6, WALL_H, HALF * 2, WALL_COLOR); // left
+
+  // Staircase on the left side (-X), rising toward +Z
+  const STEP_COUNT = 6;
+  const STEP_W = 3;
+  const STEP_D = 1;
+  const STEP_H = 0.5;
+  const STAIR_COLOR = 0xccaa66;
+  for (let i = 0; i < STEP_COUNT; i++) {
+    const y = STEP_H * (i + 1) / 2;
+    const stepHeight = STEP_H * (i + 1);
+    const x = -9;
+    const z = -3 + i * STEP_D;
+    createPlatform(scene, x, stepHeight / 2, z, STEP_W, stepHeight, STEP_D, STAIR_COLOR);
+    addStaticBox({ x, y: stepHeight / 2, z }, { x: STEP_W, y: stepHeight, z: STEP_D });
+  }
+
+  // Upper platform at the top of the stairs
+  const TOP_Y = STEP_H * STEP_COUNT;
+  const PLAT_X = -9, PLAT_Z = 5, PLAT_W = 6, PLAT_D = 6, PLAT_T = 0.4;
+  createPlatform(scene, PLAT_X, TOP_Y + PLAT_T / 2, PLAT_Z, PLAT_W, PLAT_T, PLAT_D, 0xaa8844);
+  addStaticBox({ x: PLAT_X, y: TOP_Y + PLAT_T / 2, z: PLAT_Z }, { x: PLAT_W, y: PLAT_T, z: PLAT_D });
+
+  // Railing around the upper platform (three sides, stair side open)
+  const RAIL_H = 1;
+  const RAIL_T = 0.15;
+  const RAIL_COLOR = 0x886633;
+  // back rail (+Z)
+  createWall(scene, PLAT_X, TOP_Y, PLAT_Z + PLAT_D / 2, PLAT_W, RAIL_H, RAIL_T, RAIL_COLOR);
+  // left rail (-X)
+  createWall(scene, PLAT_X - PLAT_W / 2, TOP_Y, PLAT_Z, RAIL_T, RAIL_H, PLAT_D, RAIL_COLOR);
+  // right rail (+X)
+  createWall(scene, PLAT_X + PLAT_W / 2, TOP_Y, PLAT_Z, RAIL_T, RAIL_H, PLAT_D, RAIL_COLOR);
 
   return { groundMesh, sunLight, movingPlatforms };
 }

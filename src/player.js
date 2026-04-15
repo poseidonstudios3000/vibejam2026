@@ -4,7 +4,7 @@ import { input } from './input.js';
 import { getPlayerBody, isOnIce, slamDamageAt } from './physics.js';
 import { sfx } from './audio.js';
 import { settings } from './settings.js';
-import { getNPCHitboxes, damageNPC } from './npc.js';
+import { getNPCHitboxes, damageNPC, onPlayerHit } from './npc.js';
 
 // --- Tuning ---
 const SPRINT_MULTIPLIER = 1.75;
@@ -73,6 +73,10 @@ const CAM_LERP = 0.08;
 const camTarget = new THREE.Vector3();
 const camPos = new THREE.Vector3();
 
+// Player HP
+const PLAYER_MAX_HP = 100;
+let playerHP = PLAYER_MAX_HP;
+
 // Combat
 const SHOT_RANGE = 80;
 let fireTimer = 0;
@@ -87,7 +91,7 @@ const WEAPONS = {
   pistol: {
     name: 'Pistol',
     cooldown: 0.15,
-    damage: 1,
+    damage: 20,
     pellets: 1,
     spread: 0.005,
     projectileSize: 0.28,
@@ -100,7 +104,7 @@ const WEAPONS = {
   shotgun: {
     name: 'Shotgun',
     cooldown: 0.6,
-    damage: 1,
+    damage: 12,
     pellets: 6,
     spread: 0.08,
     projectileSize: 0.22,
@@ -113,7 +117,7 @@ const WEAPONS = {
   rocket: {
     name: 'Rocket Launcher',
     cooldown: 0.9,
-    damage: 3,
+    damage: 55,
     pellets: 1,
     spread: 0,
     projectileSize: 0.55,
@@ -257,6 +261,9 @@ export function createPlayer(scene) {
 
   camPos.set(0, CAM_HEIGHT + 2, CAM_DIST);
 
+  // Listen for NPC bullets hitting us
+  onPlayerHit((dmg) => damagePlayer(dmg));
+
   window.addEventListener('mousedown', (e) => {
     if (e.button === 0 && input.isPointerLocked) wantsFire = true;
   });
@@ -338,7 +345,8 @@ export function updatePlayer(dt, camera) {
   const mouse = input.mouseDelta();
   yaw -= mouse.x * MOUSE_SENSITIVITY;
   pitch -= mouse.y * MOUSE_SENSITIVITY * (settings.invertMouseY ? -1 : 1);
-  pitch = Math.max(-1.745, Math.min(1.745, pitch)); // ±100°
+  const pitchLimit = (settings.pitchClampDeg ?? 100) * Math.PI / 180;
+  pitch = Math.max(-pitchLimit, Math.min(pitchLimit, pitch));
 
   // Movement vectors
   forward.set(-Math.sin(yaw), 0, -Math.cos(yaw));
@@ -784,6 +792,26 @@ function updateTracers(dt) {
 
 export function getCurrentWeapon() {
   return { key: currentWeapon, name: WEAPONS[currentWeapon].name };
+}
+
+export function getPlayerHP() {
+  return { hp: Math.max(0, Math.round(playerHP)), max: PLAYER_MAX_HP };
+}
+
+function damagePlayer(amount) {
+  if (playerHP <= 0) return;
+  playerHP -= amount;
+  if (playerHP <= 0) {
+    playerHP = 0;
+    respawnPlayer();
+  }
+}
+
+function respawnPlayer() {
+  const body = getPlayerBody();
+  body.position.set(0, 5, 0);
+  body.velocity.set(0, 0, 0);
+  playerHP = PLAYER_MAX_HP;
 }
 
 export function getPlayer() { return mesh; }

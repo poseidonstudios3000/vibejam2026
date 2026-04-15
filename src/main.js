@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { clock, onResize } from './utils.js';
 import { input } from './input.js';
 import { initPhysics, stepPhysics, getWorld, getPlayerBody, onBounce, onPush, onBreak } from './physics.js';
-import { createWorld, updateWorld, getMovingPlatforms } from './world.js';
-import { createPlayer, updatePlayer, updateDebris, setMovingPlatforms, getPlayerPosition, getPlayerState, getCurrentWeapon } from './player.js';
+import { createWorld, createMap1, updateWorld, getMovingPlatforms } from './world.js';
+import { createPlayer, updatePlayer, updateDebris, setMovingPlatforms, getPlayerPosition, getPlayerState, getCurrentWeapon, getPlayerHP } from './player.js';
 import { initPortals, updatePortals, getSpawnPosition } from './portal.js';
 import { initNPCs, updateNPCs, aliveNPCCount } from './npc.js';
 import { initUI, updateUI } from './ui.js';
@@ -23,14 +23,21 @@ document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
 
+// --- Map selection via URL param ---
+const mapName = new URLSearchParams(window.location.search).get('map') || 'map1';
+
 // --- Init systems ---
 initPhysics();
-createWorld(scene);
+if (mapName === 'map1') {
+  createMap1(scene);
+} else {
+  createWorld(scene);
+}
 createPlayer(scene);
 setMovingPlatforms(getMovingPlatforms());
-initPortals(scene);
-initNPCs(scene);
-initUI();
+if (mapName !== 'map1') initPortals(scene);
+initNPCs(scene, mapName);
+initUI(mapName);
 
 // --- Audio callbacks ---
 let pushThrottle = 0;
@@ -68,7 +75,7 @@ function loop() {
   updateDebris(dt);
   updatePortals(dt, getPlayerPosition());
   updateNPCs(dt, getPlayerPosition());
-  updateUI(getPlayerPosition(), getWorld().bodies.length, getPlayerState(), aliveNPCCount(), getCurrentWeapon());
+  updateUI(getPlayerPosition(), getWorld().bodies.length, getPlayerState(), aliveNPCCount(), getCurrentWeapon(), getPlayerHP());
 
   input.flush();
   renderer.render(scene, camera);

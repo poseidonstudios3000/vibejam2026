@@ -7,7 +7,12 @@ let showDebug = false;
 let frames = 0;
 let lastTime = performance.now();
 
-export function initUI() {
+export function initUI(mapName = 'sandbox') {
+  // Highlight active tab
+  document.querySelectorAll('#top-tabs a').forEach((a) => {
+    if (a.dataset.map === mapName) a.classList.add('active');
+  });
+
   fpsEl = document.getElementById('fps-counter');
   debugEl = document.getElementById('debug-info');
   controlsEl = document.getElementById('controls-hint');
@@ -20,6 +25,18 @@ export function initUI() {
     speedSlider.addEventListener('input', () => {
       settings.walkSpeed = parseFloat(speedSlider.value);
       speedVal.textContent = speedSlider.value;
+    });
+  }
+
+  // Pitch clamp slider
+  const pitchSlider = document.getElementById('pitch-slider');
+  const pitchVal = document.getElementById('pitch-val');
+  if (pitchSlider && pitchVal) {
+    pitchSlider.value = settings.pitchClampDeg;
+    pitchVal.textContent = settings.pitchClampDeg;
+    pitchSlider.addEventListener('input', () => {
+      settings.pitchClampDeg = parseFloat(pitchSlider.value);
+      pitchVal.textContent = pitchSlider.value;
     });
   }
 
@@ -88,11 +105,23 @@ function applyHudTheme(themeName) {
   accents.forEach(s => s.style.color = t.accent);
 }
 
-export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon) {
+export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon, playerHP) {
   const npcEl = document.getElementById('npc-counter');
   if (npcEl) npcEl.textContent = `Enemies: ${npcCount ?? 0}`;
   const wpnEl = document.getElementById('weapon-indicator');
   if (wpnEl && weapon) wpnEl.textContent = `[${weapon.key === 'pistol' ? 1 : weapon.key === 'shotgun' ? 2 : 3}] ${weapon.name}`;
+
+  // Player HP bar
+  if (playerHP) {
+    const fill = document.getElementById('player-hp-fill');
+    const txt = document.getElementById('player-hp-text');
+    const ratio = Math.max(0, playerHP.hp / playerHP.max);
+    if (fill) {
+      fill.style.width = `${ratio * 100}%`;
+      fill.style.background = ratio > 0.5 ? '#33ff55' : ratio > 0.25 ? '#ffcc33' : '#ff3344';
+    }
+    if (txt) txt.textContent = `${playerHP.hp} / ${playerHP.max} HP`;
+  }
 
   frames++;
   const now = performance.now();
