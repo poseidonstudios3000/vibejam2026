@@ -49,15 +49,20 @@ export function initPhysics() {
   groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
   world.addBody(groundBody);
 
-  // Player body
+  // Player body — capsule approximated by 3 spheres stacked vertically
+  // Total height ~1.2 (radius 0.3 each, centers at -0.3, 0, +0.3)
+  // Bottom of capsule at body.position.y - 0.6
   playerBody = new CANNON.Body({
     mass: 5,
-    shape: new CANNON.Sphere(0.5),
     position: new CANNON.Vec3(0, 2, 0),
     fixedRotation: true,
-    linearDamping: 0.5,
+    linearDamping: 0.05,
     material: defaultMaterial,
   });
+  const capsuleRadius = 0.3;
+  playerBody.addShape(new CANNON.Sphere(capsuleRadius), new CANNON.Vec3(0, -0.3, 0)); // feet
+  playerBody.addShape(new CANNON.Sphere(capsuleRadius), new CANNON.Vec3(0,  0.0, 0)); // waist
+  playerBody.addShape(new CANNON.Sphere(capsuleRadius), new CANNON.Vec3(0,  0.3, 0)); // chest
   world.addBody(playerBody);
 
   initCollisionCallbacks();

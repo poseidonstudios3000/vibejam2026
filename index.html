@@ -3,19 +3,278 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vibe Jam 2026 — Physics Playground</title>
+  <title>MANA FIGHT</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
     canvas { display: block; }
 
+    /* ===== CLASS SELECT SCREEN ===== */
+    #class-select {
+      position: fixed; inset: 0;
+      z-index: 100;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, #1a1020 0%, #0a0810 60%, #050508 100%);
+      font-family: 'MedievalSharp', 'Courier New', monospace;
+    }
+
+    #class-select h1 {
+      font-size: 52px;
+      color: #e8843c;
+      text-shadow: 0 0 30px rgba(232, 132, 60, 0.5), 0 2px 4px #000;
+      letter-spacing: 8px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    #class-select .subtitle {
+      font-size: 14px;
+      color: #665544;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .class-cards {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .class-card {
+      width: 220px;
+      background: rgba(20, 16, 28, 0.9);
+      border: 2px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 20px 16px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .class-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      border-radius: 12px;
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+
+    .class-card:hover {
+      border-color: rgba(232, 132, 60, 0.4);
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .class-card.selected {
+      border-color: #e8843c;
+      box-shadow: 0 0 20px rgba(232, 132, 60, 0.3), 0 8px 24px rgba(0, 0, 0, 0.5);
+      transform: translateY(-4px);
+    }
+
+    .class-card.selected::before {
+      opacity: 1;
+      background: linear-gradient(180deg, rgba(232, 132, 60, 0.08) 0%, transparent 60%);
+    }
+
+    .class-card .card-preview {
+      width: 100%;
+      height: 200px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .class-card .card-preview canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    .class-card .card-preview img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .class-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .class-name {
+      font-size: 22px;
+      color: #fff;
+      margin-bottom: 4px;
+      font-family: 'MedievalSharp', serif;
+    }
+
+    .class-role {
+      font-size: 11px;
+      color: #888;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .class-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 8px;
+      margin-bottom: 12px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      color: #999;
+    }
+
+    .stat-row .stat-label { color: #777; }
+    .stat-row .stat-val { color: #ccc; }
+
+    .stat-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #777;
+      font-family: 'Courier New', monospace;
+      margin-bottom: 3px;
+    }
+
+    .stat-bar-row .stat-label {
+      width: 50px;
+      text-align: right;
+    }
+
+    .stat-bar {
+      flex: 1;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .stat-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+
+    .class-abilities {
+      text-align: left;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: #888;
+      line-height: 1.6;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 10px;
+    }
+
+    .class-abilities .ability-key {
+      color: #e8843c;
+      font-weight: bold;
+    }
+
+    .class-abilities .ability-name {
+      color: #bbb;
+    }
+
+    .passive-text {
+      color: #666;
+      font-style: italic;
+      margin-top: 4px;
+    }
+
+    /* Tank accent */
+    .class-card[data-class="knight"] .class-name { color: #cc8855; }
+    .class-card[data-class="knight"].selected { border-color: #cc6622; box-shadow: 0 0 20px rgba(204, 102, 34, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
+
+    /* Ranger accent */
+    .class-card[data-class="archer"] .class-name { color: #66aa55; }
+    .class-card[data-class="archer"].selected { border-color: #3d5c3a; box-shadow: 0 0 20px rgba(61, 92, 58, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
+
+    /* Eso accent */
+    .class-card[data-class="mage"] .class-name { color: #aa77ee; }
+    .class-card[data-class="mage"].selected { border-color: #8844cc; box-shadow: 0 0 20px rgba(136, 68, 204, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
+
+    /* Phantom accent */
+    .class-card[data-class="rogue"] .class-name { color: #dd4455; }
+    .class-card[data-class="rogue"].selected { border-color: #cc2233; box-shadow: 0 0 20px rgba(204, 34, 51, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
+
+    #play-btn {
+      padding: 14px 60px;
+      font-family: 'MedievalSharp', serif;
+      font-size: 24px;
+      color: #fff;
+      background: linear-gradient(135deg, #cc6622, #e8843c);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      opacity: 0.3;
+      pointer-events: none;
+      box-shadow: 0 4px 16px rgba(232, 132, 60, 0.3);
+    }
+
+    #play-btn.ready {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    #play-btn.ready:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 24px rgba(232, 132, 60, 0.5);
+    }
+
+    /* ===== NAV TABS ===== */
+    #nav-tabs {
+      position: fixed; top: 0; left: 0;
+      display: flex; gap: 0; z-index: 200;
+      pointer-events: auto;
+    }
+    #nav-tabs a {
+      font-family: 'Courier New', monospace;
+      font-size: 12px; letter-spacing: 2px;
+      text-transform: uppercase; text-decoration: none;
+      padding: 8px 20px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #777;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    #nav-tabs a:hover { color: #ccc; }
+    #nav-tabs a.active {
+      color: #fff;
+      background: rgba(0, 0, 0, 0.8);
+      border-bottom-color: #e8843c;
+    }
+
+    /* ===== IN-GAME HUD ===== */
     #hud {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
       pointer-events: none;
       z-index: 10;
       font-family: 'Courier New', monospace;
-      color: #0ff;
+      color: #e8843c;
+      display: none;
     }
 
     #fps-counter {
@@ -58,161 +317,317 @@
       text-align: center;
     }
 
-    /* Controls legend — 50% bigger */
     #controls-hint {
       position: absolute; bottom: 14px; left: 14px;
-      font-size: 16px; color: #8af; opacity: 0.75;
+      font-size: 14px; color: #997755; opacity: 0.75;
       line-height: 1.7;
     }
-    #controls-hint span { color: #0ff; font-weight: bold; }
+    #controls-hint span { color: #e8843c; font-weight: bold; }
 
-    /* Top tabs */
-    #top-tabs {
+    /* HP + Mana bars */
+    .resource-bar {
+      position: absolute; left: 14px; width: 260px; height: 24px;
+      background: rgba(0,0,0,0.75); border: 2px solid #fff;
+      border-radius: 4px; z-index: 20;
+      font-family: 'Courier New', monospace; overflow: hidden;
+    }
+    #player-hp { bottom: 100px; }
+    #player-mana { bottom: 70px; border-color: #88aaff; }
+    #player-stamina { bottom: 40px; border-color: #ffaa33; }
+    #player-stamina-fill { width: 100%; background: #ffaa33; }
+
+    .bar-fill {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      transition: width 0.15s;
+    }
+    #player-hp-fill { width: 100%; background: #33ff55; }
+    #player-mana-fill { width: 100%; background: #4488ff; }
+
+    .bar-text {
+      position: relative; text-align: center;
+      line-height: 20px; color: #fff;
+      font-weight: bold; font-size: 13px;
+      text-shadow: 1px 1px 3px #000;
+    }
+
+    /* Class info in HUD */
+    #class-indicator {
+      position: absolute; bottom: 100px; left: 14px;
+      font-size: 14px; color: #e8843c; font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    /* Cooldowns */
+    #cooldown-bar {
+      position: absolute; bottom: 14px; right: 14px;
+      display: flex; gap: 8px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .cd-slot {
+      width: 52px; height: 52px;
+      background: rgba(0, 0, 0, 0.7);
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      position: relative;
+    }
+
+    .cd-slot .cd-key {
+      font-size: 11px; color: #e8843c;
+      font-weight: bold;
+      margin-bottom: 2px;
+    }
+
+    .cd-slot .cd-name {
+      font-size: 8px; color: #888;
+      text-align: center; line-height: 1.1;
+    }
+
+    .cd-slot .cd-overlay {
+      position: absolute; inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; color: #fff; font-weight: bold;
+    }
+
+    /* Theme picker */
+    #theme-picker {
       position: absolute; top: 8px; left: 50%;
       transform: translateX(-50%);
       display: flex; gap: 6px;
       pointer-events: auto;
       z-index: 25;
     }
-    #top-tabs a {
+
+    #theme-picker .theme-btn {
       font-family: 'Courier New', monospace;
-      font-size: 13px; letter-spacing: 2px;
+      font-size: 11px; letter-spacing: 1px;
       text-transform: uppercase;
-      padding: 8px 18px;
+      padding: 6px 14px;
       background: rgba(0, 0, 0, 0.55);
-      color: #ccd;
-      border: 1px solid rgba(255,255,255,0.15);
+      color: #888;
+      border: 1px solid rgba(255,255,255,0.1);
       border-radius: 4px;
-      text-decoration: none;
       cursor: pointer;
-    }
-    #top-tabs a.active {
-      background: rgba(0, 255, 255, 0.15);
-      color: #0ff;
-      border-color: rgba(0, 255, 255, 0.45);
-      box-shadow: 0 0 8px rgba(0,255,255,0.25);
-    }
-    #top-tabs a:hover { color: #fff; }
-
-    /* Settings panel — always visible */
-    #settings-panel {
-      position: absolute; top: 12px; right: 12px;
-      background: rgba(5, 5, 20, 0.9);
-      border: 1px solid rgba(0, 255, 255, 0.2);
-      border-radius: 6px;
-      padding: 14px 18px;
-      pointer-events: auto;
-      min-width: 230px;
-    }
-    #settings-panel h3 {
-      font-size: 12px; color: #0ff;
-      margin-bottom: 12px;
-      text-transform: uppercase; letter-spacing: 2px;
+      transition: all 0.2s;
     }
 
-    .slider-row { margin-bottom: 10px; }
-    .slider-row label {
-      display: flex; justify-content: space-between;
-      font-size: 11px; color: #8af; margin-bottom: 4px;
-    }
-    .slider-row label .val { color: #0ff; }
+    #theme-picker .theme-btn:hover { color: #ccc; border-color: rgba(255,255,255,0.25); }
 
-    .slider-row input[type="range"] {
-      width: 100%; height: 4px;
-      -webkit-appearance: none; appearance: none;
-      background: rgba(0, 255, 255, 0.15);
-      border-radius: 2px; outline: none;
-    }
-    .slider-row input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px; height: 14px; border-radius: 50%;
-      background: #0ff; cursor: pointer; border: 2px solid #001a1a;
-    }
-    .slider-row input[type="range"]::-moz-range-thumb {
-      width: 14px; height: 14px; border-radius: 50%;
-      background: #0ff; cursor: pointer; border: 2px solid #001a1a;
+    #theme-picker .theme-btn.active {
+      color: #fff;
+      border-color: rgba(255,255,255,0.4);
+      box-shadow: 0 0 8px rgba(255,255,255,0.15);
     }
 
-    .select-row { margin-bottom: 6px; }
-    .select-row label {
-      display: block; font-size: 11px; color: #8af; margin-bottom: 4px;
+    #theme-picker .theme-btn[data-theme="mystic"].active {
+      color: #eebb55; border-color: rgba(238,187,85,0.5);
+      box-shadow: 0 0 8px rgba(238,187,85,0.25);
     }
-    .select-row select {
-      width: 100%; padding: 4px 6px;
-      font-family: 'Courier New', monospace; font-size: 11px;
-      background: rgba(0, 20, 30, 0.9); color: #0ff;
-      border: 1px solid rgba(0, 255, 255, 0.2);
-      border-radius: 3px; outline: none; cursor: pointer;
+    #theme-picker .theme-btn[data-theme="frost"].active {
+      color: #224466; border-color: rgba(34,68,102,0.6);
+      background: rgba(200,220,240,0.4);
+      box-shadow: 0 0 8px rgba(100,180,240,0.25);
     }
-    .select-row select option {
-      background: #0a0a1e; color: #0ff;
+    #theme-picker .theme-btn[data-theme="sandstone"].active {
+      color: #ffddaa; border-color: rgba(255,200,120,0.5);
+      box-shadow: 0 0 8px rgba(255,200,120,0.25);
     }
+    #theme-picker .theme-btn[data-theme="void"].active {
+      color: #44ffaa; border-color: rgba(68,255,170,0.5);
+      box-shadow: 0 0 8px rgba(68,255,170,0.25);
+    }
+
+    /* Kills */
+    #kill-counter {
+      position: absolute; top: 50px; right: 12px;
+      font-size: 14px; color: #e8843c; font-weight: bold;
+    }
+
+    #pause-overlay {
+      position: absolute; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      flex-direction: column;
+      background: rgba(0,0,0,0.75); z-index: 40;
+      pointer-events: none;
+    }
+    #pause-overlay .pause-title {
+      font-family: 'MedievalSharp', serif;
+      font-size: 42px; color: #e8843c;
+      letter-spacing: 8px; font-weight: bold;
+      text-shadow: 0 0 18px rgba(232,132,60,0.5);
+    }
+    #pause-overlay .pause-sub {
+      font-family: 'Courier New', monospace;
+      font-size: 14px; color: #997755;
+      margin-top: 18px; letter-spacing: 2px;
+    }
+    #pause-overlay .pause-sub span { color: #e8843c; }
   </style>
 </head>
 <body>
+  <div id="nav-tabs">
+    <a href="/?map=map1" data-map="map1">Map 1</a>
+    <a href="/?map=map2" data-map="map2">Map 2</a>
+    <a href="/dev.html">Movement</a>
+    <a href="/lab.html">Model Lab</a>
+  </div>
+  <script>
+    const currentMap = new URLSearchParams(window.location.search).get('map') || 'map1';
+    document.querySelectorAll('#nav-tabs a[data-map]').forEach(a => {
+      if (a.dataset.map === currentMap) a.classList.add('active');
+    });
+  </script>
+
+  <!-- ===== CLASS SELECT ===== -->
+  <div id="class-select">
+    <img src="/assets/mana-fight-logo.png" alt="MANA FIGHT" style="width: 500px; height: auto; margin-bottom: 12px; filter: drop-shadow(0 0 30px rgba(232,132,60,0.3));">
+    <div class="subtitle">Choose your class</div>
+
+    <div class="class-cards">
+      <!-- Knight -->
+      <div class="class-card" data-class="knight">
+        <div class="card-preview" id="preview-knight"><img src="/assets/class-knight.png" alt="Tank"></div>
+        <div class="class-name">Tank</div>
+        <div class="class-role">Frontline</div>
+        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:40%;background:#cc6622;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#cc6622;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#cc6622;"></div></div></div>
+        <div class="class-abilities">
+          <span class="ability-key">LMB</span> <span class="ability-name">Greatsword</span> — 35 dmg<br>
+          <span class="ability-key">RMB</span> <span class="ability-name">Shield Bash</span> — stun<br>
+          <span class="ability-key">Q</span> <span class="ability-name">Fortify</span> — +50 armor<br>
+          <span class="ability-key">E</span> <span class="ability-name">Ground Slam</span> — AOE<br>
+          <div class="passive-text">Heavy Plate: -20% dmg taken</div>
+        </div>
+      </div>
+
+      <!-- Archer -->
+      <div class="class-card" data-class="archer">
+        <div class="card-preview" id="preview-archer"></div>
+        <div class="class-name">Ranger</div>
+        <div class="class-role">DPS / Kite</div>
+        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:80%;background:#3d5c3a;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#3d5c3a;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:80%;background:#3d5c3a;"></div></div></div>
+        <div class="class-abilities">
+          <span class="ability-key">LMB</span> <span class="ability-name">Dagger Stab</span> — 20 dmg<br>
+          <span class="ability-key">RMB</span> <span class="ability-name">Bow Shot</span> — 40 dmg<br>
+          <span class="ability-key">Q</span> <span class="ability-name">Multishot</span> — 3 arrows<br>
+          <span class="ability-key">E</span> <span class="ability-name">Poison Arrow</span> — DoT<br>
+          <div class="passive-text">Hawk's Eye: +25% range</div>
+        </div>
+      </div>
+
+      <!-- Mage -->
+      <div class="class-card" data-class="mage">
+        <div class="card-preview" id="preview-mage"></div>
+        <div class="class-name">Eso</div>
+        <div class="class-role">Area Damage</div>
+        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#8844cc;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#8844cc;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:40%;background:#8844cc;"></div></div></div>
+        <div class="class-abilities">
+          <span class="ability-key">LMB</span> <span class="ability-name">Staff Whack</span> — 15 dmg<br>
+          <span class="ability-key">RMB</span> <span class="ability-name">Magic Missile</span> — homing<br>
+          <span class="ability-key">Q</span> <span class="ability-name">Fireball</span> — 50 AOE<br>
+          <span class="ability-key">E</span> <span class="ability-name">Blink</span> — teleport<br>
+          <div class="passive-text">Arcane Focus: +50% mana regen</div>
+        </div>
+      </div>
+
+      <!-- Rogue -->
+      <div class="class-card" data-class="rogue">
+        <div class="card-preview" id="preview-rogue"></div>
+        <div class="class-name">Phantom</div>
+        <div class="class-role">Assassin</div>
+        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:80%;background:#cc2233;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#cc2233;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#cc2233;"></div></div></div>
+        <div class="class-abilities">
+          <span class="ability-key">LMB</span> <span class="ability-name">Twin Daggers</span> — fast<br>
+          <span class="ability-key">RMB</span> <span class="ability-name">Throwing Knife</span> — instant<br>
+          <span class="ability-key">Q</span> <span class="ability-name">Shadowstep</span> — dash+invis<br>
+          <span class="ability-key">E</span> <span class="ability-name">Smoke Bomb</span> — blind<br>
+          <div class="passive-text">Backstab: +50% from behind</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="play-btn">Fight</button>
+  </div>
+
+  <!-- ===== IN-GAME HUD ===== -->
   <div id="hud">
-    <div id="top-tabs">
-      <a href="?map=map1" data-map="map1">Map 1</a>
-      <a href="?map=sandbox" data-map="sandbox">Sandbox</a>
-    </div>
     <div id="fps-counter">60 FPS</div>
-    <div id="npc-counter" style="position:absolute; top:28px; left:8px; font-size:13px; color:#ffaa33; font-weight:bold;">Enemies: 0</div>
-    <div id="weapon-indicator" style="position:absolute; bottom:90px; right:14px; font-size:16px; color:#fff; background:rgba(0,0,0,0.65); padding:8px 14px; border-radius:4px; font-weight:bold; letter-spacing:1px; z-index:20;">[1] Pistol</div>
-    <div id="player-hp" style="position:absolute; bottom:90px; left:14px; width:260px; height:28px; background:rgba(0,0,0,0.75); border:2px solid #fff; border-radius:4px; z-index:20; font-family:'Courier New',monospace; overflow:hidden;">
-      <div id="player-hp-fill" style="position:absolute; left:0; top:0; bottom:0; width:100%; background:#33ff55; transition:width 0.15s;"></div>
-      <div id="player-hp-text" style="position:relative; text-align:center; line-height:24px; color:#fff; font-weight:bold; font-size:15px; text-shadow:1px 1px 3px #000;">100 / 100 HP</div>
+    <img src="/assets/mana-fight-logo.png" alt="MANA FIGHT" style="position:absolute;top:4px;left:50%;transform:translateX(-50%);width:140px;height:auto;opacity:0.75;pointer-events:none;">
+    <div id="theme-picker" style="top:auto;bottom:80px;left:50%;right:auto;transform:translateX(-50%)">
+      <button class="theme-btn" data-theme="mystic">Mystic</button>
+      <button class="theme-btn active" data-theme="frost">Frost</button>
+      <button class="theme-btn" data-theme="sandstone">Sandstone</button>
+      <button class="theme-btn" data-theme="void">Void</button>
     </div>
+    <div id="kill-counter">Kills: 0</div>
     <div id="debug-info"></div>
     <div id="crosshair"></div>
     <div id="crosshair-dot"></div>
     <div id="click-prompt">Click to play</div>
 
-    <div id="settings-panel">
-      <h3>Settings</h3>
-      <div class="slider-row">
-        <label>Walk Speed <span class="val" id="speed-val">8</span></label>
-        <input type="range" id="speed-slider" min="3" max="25" step="0.5" value="8">
+    <div id="class-indicator"></div>
+
+    <div id="player-hp" class="resource-bar">
+      <div id="player-hp-fill" class="bar-fill"></div>
+      <div id="player-hp-text" class="bar-text">100 / 100 HP</div>
+    </div>
+    <div id="player-mana" class="resource-bar">
+      <div id="player-mana-fill" class="bar-fill"></div>
+      <div id="player-mana-text" class="bar-text">100 / 100 MP</div>
+    </div>
+    <div id="player-stamina" class="resource-bar">
+      <div id="player-stamina-fill" class="bar-fill"></div>
+      <div id="player-stamina-text" class="bar-text">100 / 100 STA</div>
+    </div>
+
+    <div id="cooldown-bar">
+      <div class="cd-slot" id="cd-melee">
+        <div class="cd-key">LMB</div>
+        <div class="cd-name" id="cd-melee-name">Melee</div>
       </div>
-      <div class="slider-row">
-        <label>Low-G Strength <span class="val" id="grav-val">15</span></label>
-        <input type="range" id="grav-slider" min="0" max="25" step="0.5" value="15">
+      <div class="cd-slot" id="cd-ranged">
+        <div class="cd-key">RMB</div>
+        <div class="cd-name" id="cd-ranged-name">Ranged</div>
       </div>
-      <div class="slider-row">
-        <label>Pitch Clamp <span class="val"><span id="pitch-val">25</span>°</span></label>
-        <input type="range" id="pitch-slider" min="10" max="40" step="1" value="25">
+      <div class="cd-slot" id="cd-q">
+        <div class="cd-key">Q</div>
+        <div class="cd-name" id="cd-q-name">Spell 1</div>
       </div>
-      <div class="select-row">
-        <label>Color Theme</label>
-        <select id="theme-select">
-          <option value="dark">Dark (default)</option>
-          <option value="soft">Soft</option>
-          <option value="light">Light</option>
-        </select>
-      </div>
-      <div class="select-row">
-        <label>Mouse Y Axis</label>
-        <select id="invert-y-select">
-          <option value="normal">Normal — up looks up (default)</option>
-          <option value="inverted">Inverted — up looks down</option>
-        </select>
+      <div class="cd-slot" id="cd-e">
+        <div class="cd-key">E</div>
+        <div class="cd-name" id="cd-e-name">Spell 2</div>
       </div>
     </div>
 
     <div id="controls-hint">
       <span>WASD</span> move &nbsp;
       <span>SHIFT</span> sprint &nbsp;
-      <span>SPACE</span> jump / double jump &nbsp;
-      <span>Q</span> dash &nbsp;
-      <span>C</span> slide / ground slam<br>
-      <span>MOUSE</span> look &nbsp;
-      <span>LEFT CLICK</span> shoot &nbsp;
-      <span>1/2/3</span> pistol/shotgun/rocket &nbsp;
-      <span>`</span> debug &nbsp;
-      <span>H</span> hide controls
+      <span>SPACE</span> jump<br>
+      <span>LMB</span> melee &nbsp;
+      <span>RMB</span> ranged &nbsp;
+      <span>Q</span> spell 1 &nbsp;
+      <span>E</span> spell 2 &nbsp;
+      <span>P</span> pause &nbsp;
+      <span>H</span> hide
+    </div>
+
+    <div id="pause-overlay">
+      <div class="pause-title">PAUSED</div>
+      <div class="pause-sub">CLICK OR PRESS <span>P</span> TO RESUME</div>
     </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>
-  <script async src="https://vibej.am/2026/widget.js"></script>
 </body>
 </html>

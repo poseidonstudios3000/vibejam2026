@@ -1,76 +1,54 @@
-import { settings } from './settings.js';
+import { CLASS_DEFS } from './classes.js';
 import { applyTheme } from './world.js';
+import { themes } from './settings.js';
 
-let fpsEl, debugEl, controlsEl, settingsPanel;
+let fpsEl, debugEl, controlsEl;
 let showFps = true;
 let showDebug = false;
 let frames = 0;
 let lastTime = performance.now();
+let currentClassDef = null;
 
-export function initUI(mapName = 'sandbox') {
-  // Highlight active tab
-  document.querySelectorAll('#top-tabs a').forEach((a) => {
-    if (a.dataset.map === mapName) a.classList.add('active');
-  });
-
+export function initUI(mapName = 'map1', classId = 'knight') {
   fpsEl = document.getElementById('fps-counter');
   debugEl = document.getElementById('debug-info');
   controlsEl = document.getElementById('controls-hint');
-  settingsPanel = document.getElementById('settings-panel');
 
-  // Speed slider
-  const speedSlider = document.getElementById('speed-slider');
-  const speedVal = document.getElementById('speed-val');
-  if (speedSlider && speedVal) {
-    speedSlider.addEventListener('input', () => {
-      settings.walkSpeed = parseFloat(speedSlider.value);
-      speedVal.textContent = speedSlider.value;
-    });
+  currentClassDef = CLASS_DEFS[classId];
+
+  // Set class indicator
+  const classEl = document.getElementById('class-indicator');
+  if (classEl && currentClassDef) {
+    classEl.textContent = `${currentClassDef.icon} ${currentClassDef.name} — ${currentClassDef.role}`;
   }
 
-  // Pitch clamp slider
-  const pitchSlider = document.getElementById('pitch-slider');
-  const pitchVal = document.getElementById('pitch-val');
-  if (pitchSlider && pitchVal) {
-    pitchSlider.value = settings.pitchClampDeg;
-    pitchVal.textContent = settings.pitchClampDeg;
-    pitchSlider.addEventListener('input', () => {
-      settings.pitchClampDeg = parseFloat(pitchSlider.value);
-      pitchVal.textContent = pitchSlider.value;
-    });
+  // Set cooldown slot names
+  if (currentClassDef) {
+    const meleeN = document.getElementById('cd-melee-name');
+    const rangedN = document.getElementById('cd-ranged-name');
+    const qN = document.getElementById('cd-q-name');
+    const eN = document.getElementById('cd-e-name');
+    if (meleeN) meleeN.textContent = currentClassDef.melee.name;
+    if (rangedN) rangedN.textContent = currentClassDef.ranged.name;
+    if (qN) qN.textContent = currentClassDef.spell1.name;
+    if (eN) eN.textContent = currentClassDef.spell2.name;
   }
 
-  // Gravity slider
-  const gravSlider = document.getElementById('grav-slider');
-  const gravVal = document.getElementById('grav-val');
-  if (gravSlider && gravVal) {
-    gravSlider.addEventListener('input', () => {
-      settings.gravityZoneStrength = parseFloat(gravSlider.value);
-      gravVal.textContent = gravSlider.value;
+  // Theme picker
+  const themeBtns = document.querySelectorAll('#theme-picker .theme-btn');
+  themeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const themeId = btn.dataset.theme;
+      if (!themes[themeId]) return;
+      themeBtns.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyTheme(themeId);
+      applyHudAccent(themeId);
     });
-  }
+  });
 
-  // Invert Mouse Y dropdown
-  const invertYSelect = document.getElementById('invert-y-select');
-  if (invertYSelect) {
-    invertYSelect.value = settings.invertMouseY ? 'inverted' : 'normal';
-    invertYSelect.addEventListener('change', () => {
-      settings.invertMouseY = invertYSelect.value === 'inverted';
-    });
-  }
-
-  // Theme dropdown
-  const themeSelect = document.getElementById('theme-select');
-  if (themeSelect) {
-    themeSelect.value = settings.colorTheme;
-    applyTheme(settings.colorTheme);
-    applyHudTheme(settings.colorTheme);
-    themeSelect.addEventListener('change', () => {
-      settings.colorTheme = themeSelect.value;
-      applyTheme(themeSelect.value);
-      applyHudTheme(themeSelect.value);
-    });
-  }
+  // Apply initial HUD accent
+  applyHudAccent('frost');
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey) {
@@ -87,31 +65,61 @@ export function initUI(mapName = 'sandbox') {
   });
 }
 
-function applyHudTheme(themeName) {
-  const themes = {
-    dark:  { text: '#0ff', bg: 'rgba(5, 5, 20, 0.9)', border: 'rgba(0, 255, 255, 0.2)', label: '#8af', accent: '#0ff' },
-    light: { text: '#226', bg: 'rgba(240, 245, 250, 0.9)', border: 'rgba(50, 50, 100, 0.2)', label: '#446', accent: '#226' },
-    soft:  { text: '#9bd', bg: 'rgba(20, 20, 35, 0.9)', border: 'rgba(150, 180, 220, 0.2)', label: '#8ab', accent: '#9bd' },
-  };
-  const t = themes[themeName] || themes.dark;
+function applyHudAccent(themeId) {
+  const t = themes[themeId];
+  if (!t) return;
+  const accent = t.hudAccent;
+  // Light themes need dark text + light shadow, dark themes need light text + dark shadow
+  const isLight = themeId === 'frost' || themeId === 'sandstone';
+  const shadow = isLight ? '0 0 4px rgba(255,255,255,0.8), 0 1px 2px rgba(255,255,255,0.5)' : '0 0 4px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.5)';
+  const baseTextColor = isLight ? '#333' : '#999';
+
+  // HUD text color
   const hud = document.getElementById('hud');
-  if (hud) hud.style.color = t.text;
-  if (settingsPanel) {
-    settingsPanel.style.background = t.bg;
-    settingsPanel.style.borderColor = t.border;
+  if (hud) {
+    hud.style.color = accent;
+    hud.style.textShadow = shadow;
   }
-  if (controlsEl) controlsEl.style.color = t.label;
-  const accents = controlsEl ? controlsEl.querySelectorAll('span') : [];
-  accents.forEach(s => s.style.color = t.accent);
+
+  // Kill counter
+  const killEl = document.getElementById('kill-counter');
+  if (killEl) killEl.style.color = accent;
+
+  // Class indicator
+  const classEl = document.getElementById('class-indicator');
+  if (classEl) classEl.style.color = accent;
+
+  // Cooldown keys
+  document.querySelectorAll('.cd-slot .cd-key').forEach((el) => { el.style.color = accent; });
+
+  // Cooldown slot backgrounds
+  const slotBg = isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)';
+  const slotBorder = isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)';
+  document.querySelectorAll('.cd-slot').forEach((el) => {
+    el.style.background = slotBg;
+    el.style.borderColor = slotBorder;
+  });
+
+  // Controls hint
+  if (controlsEl) {
+    controlsEl.style.color = baseTextColor;
+    controlsEl.querySelectorAll('span').forEach((s) => { s.style.color = accent; });
+  }
+
+  // Resource bars — adapt border
+  const barBorder = isLight ? '#444' : '#fff';
+  document.querySelectorAll('.resource-bar').forEach((el) => { el.style.borderColor = barBorder; });
+
+  // FPS counter
+  if (fpsEl) fpsEl.style.color = baseTextColor;
 }
 
-export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon, playerHP, kills) {
-  const npcEl = document.getElementById('npc-counter');
-  if (npcEl) npcEl.textContent = `Kills: ${kills ?? 0}   Enemies left: ${npcCount ?? 0}`;
-  const wpnEl = document.getElementById('weapon-indicator');
-  if (wpnEl && weapon) wpnEl.textContent = `[${weapon.key === 'pistol' ? 1 : weapon.key === 'shotgun' ? 2 : 3}] ${weapon.name}`;
+export function updateUI(playerPos, bodyCount, playerState, npcCount, playerHP, playerMana, kills, playerStamina) {
+  // Kills
+  const killEl = document.getElementById('kill-counter');
+  if (killEl) killEl.textContent = `Kills: ${kills ?? 0}  |  Enemies: ${npcCount ?? 0}`;
 
-  // Player HP bar
+  // HP bar
   if (playerHP) {
     const fill = document.getElementById('player-hp-fill');
     const txt = document.getElementById('player-hp-text');
@@ -123,6 +131,31 @@ export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon, pl
     if (txt) txt.textContent = `${playerHP.hp} / ${playerHP.max} HP`;
   }
 
+  // Mana bar
+  if (playerMana) {
+    const fill = document.getElementById('player-mana-fill');
+    const txt = document.getElementById('player-mana-text');
+    const ratio = Math.max(0, playerMana.mana / playerMana.max);
+    if (fill) fill.style.width = `${ratio * 100}%`;
+    if (txt) txt.textContent = `${playerMana.mana} / ${playerMana.max} MP`;
+  }
+
+  // Stamina bar
+  if (playerStamina) {
+    const fill = document.getElementById('player-stamina-fill');
+    const txt = document.getElementById('player-stamina-text');
+    const ratio = Math.max(0, playerStamina.stamina / playerStamina.max);
+    if (fill) fill.style.width = `${ratio * 100}%`;
+    if (txt) txt.textContent = `${playerStamina.stamina} / ${playerStamina.max} STA`;
+  }
+
+  // Cooldowns
+  updateCooldownSlot('cd-melee', playerState.meleeCd, currentClassDef?.melee.cooldown ?? 1);
+  updateCooldownSlot('cd-ranged', playerState.rangedCd, currentClassDef?.ranged.cooldown ?? 1);
+  updateCooldownSlot('cd-q', playerState.spell1Cd, currentClassDef?.spell1.cooldown ?? 8);
+  updateCooldownSlot('cd-e', playerState.spell2Cd, currentClassDef?.spell2.cooldown ?? 12);
+
+  // FPS
   frames++;
   const now = performance.now();
   if (now - lastTime >= 500) {
@@ -132,16 +165,32 @@ export function updateUI(playerPos, bodyCount, playerState, npcCount, weapon, pl
     lastTime = now;
   }
 
+  // Debug
   if (showDebug && debugEl) {
     debugEl.innerHTML =
       `pos: ${playerPos.x.toFixed(1)}, ${playerPos.y.toFixed(1)}, ${playerPos.z.toFixed(1)}<br>` +
       `speed: ${playerState.speed} u/s<br>` +
-      `bodies: ${bodyCount}<br>` +
-      `jumps: ${playerState.jumpsLeft}<br>` +
-      `dash cd: ${playerState.dashCooldown}s` +
-      (playerState.dashing ? ' <span style="color:#0f0">DASH</span>' : '') +
-      (playerState.sliding ? ' <span style="color:#0af">SLIDE</span>' : '') +
-      (playerState.slamming ? ' <span style="color:#f44">SLAM</span>' : '') +
-      (playerState.onIce ? ' <span style="color:#aef">ICE</span>' : '');
+      `class: ${playerState.classId}<br>` +
+      `bodies: ${bodyCount}` +
+      (playerState.sliding ? ' <span style="color:#0af">SLIDE</span>' : '');
+  }
+}
+
+function updateCooldownSlot(slotId, remaining, max) {
+  const slot = document.getElementById(slotId);
+  if (!slot) return;
+
+  let overlay = slot.querySelector('.cd-overlay');
+  if (remaining > 0.05) {
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.className = 'cd-overlay';
+      slot.appendChild(overlay);
+    }
+    overlay.textContent = remaining.toFixed(1);
+    slot.style.borderColor = 'rgba(255,255,255,0.05)';
+  } else {
+    if (overlay) { overlay.remove(); }
+    slot.style.borderColor = 'rgba(232, 132, 60, 0.4)';
   }
 }

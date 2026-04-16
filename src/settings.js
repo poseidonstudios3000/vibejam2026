@@ -1,60 +1,94 @@
-// Shared game settings — adjusted via HUD sliders and dropdowns
+// Shared game settings
 
 export const settings = {
   walkSpeed: 8,
-  gravityZoneStrength: 15,
-  colorTheme: 'dark', // 'dark' | 'light' | 'soft'
-  invertMouseY: false, // false = normal (default, mouse up looks up); true = inverted
-  pitchClampDeg: 25, // max up/down aim angle in degrees
+  colorTheme: 'frost', // 'mystic' | 'frost' | 'sandstone' | 'void'
+  invertMouseY: false,
+  pitchClampDeg: 25,
 };
 
 export const themes = {
-  dark: {
-    sky: ['#0a0020', '#1a0a4e', '#0d1a3a', '#050510'],
-    fog: 0x050510,
-    fogDensity: 0.006,
-    ground: 0x111122,
-    grid1: 0x222244,
-    grid2: 0x181830,
-    ambient: 0x334466,
-    ambientIntensity: 0.6,
-    sunColor: 0xffeedd,
-    sunIntensity: 1.5,
-    labelColor: '#0ff',
-    hudText: '#0ff',
-    hudBg: 'rgba(5, 5, 20, 0.9)',
-    hudBorder: 'rgba(0, 255, 255, 0.2)',
-  },
-  light: {
-    sky: ['#87ceeb', '#b0e0ff', '#d4edfc', '#f0f8ff'],
-    fog: 0xe8f4f8,
-    fogDensity: 0.004,
-    ground: 0xc8d8c8,
-    grid1: 0xaabbaa,
-    grid2: 0xbbccbb,
-    ambient: 0xffffff,
-    ambientIntensity: 1.0,
-    sunColor: 0xffffff,
+  // --- MYSTIC: rich purple/gold, medium brightness, fantasy magic feel.
+  //     Warm gold light makes characters glow, purple ground gives depth ---
+  mystic: {
+    sky: ['#2a1545', '#4a2878', '#352060', '#1a1030'],
+    fog: 0x1a1030,
+    fogDensity: 0.003,
+    ground: 0x2a2040,
+    grid1: 0x443868,
+    grid2: 0x362a55,
+    ambient: 0xaa88dd,
+    ambientIntensity: 1.2,
+    sunColor: 0xffd088,
     sunIntensity: 2.0,
-    labelColor: '#226',
-    hudText: '#226',
-    hudBg: 'rgba(240, 245, 250, 0.9)',
-    hudBorder: 'rgba(50, 50, 100, 0.2)',
+    labelColor: '#eebb55',
+    hudAccent: '#eebb55',
+    wallColor: 0x5a4480,
+    coverColor: 0x4a3870,
+    platColor: 0x6a5090,
+    rampColor: 0x7a60a0,
   },
-  soft: {
-    sky: ['#1a1028', '#2a1848', '#1e2040', '#151520'],
-    fog: 0x151520,
-    fogDensity: 0.005,
-    ground: 0x1e1e2e,
-    grid1: 0x2e2e4e,
-    grid2: 0x252540,
-    ambient: 0x667799,
-    ambientIntensity: 0.8,
-    sunColor: 0xffddc8,
-    sunIntensity: 1.2,
-    labelColor: '#9bd',
-    hudText: '#9bd',
-    hudBg: 'rgba(20, 20, 35, 0.9)',
-    hudBorder: 'rgba(150, 180, 220, 0.2)',
+
+  // --- FROST: bright icy blue-white, high contrast, clean readability.
+  //     Almost daylight-level brightness with cool tones, characters are very visible ---
+  frost: {
+    sky: ['#4488bb', '#6699cc', '#88bbdd', '#aaddee'],
+    fog: 0xbbddee,
+    fogDensity: 0.002,
+    ground: 0x889aaa,
+    grid1: 0x99aabb,
+    grid2: 0x7799aa,
+    ambient: 0xccddee,
+    ambientIntensity: 1.6,
+    sunColor: 0xffffff,
+    sunIntensity: 2.5,
+    labelColor: '#224466',
+    hudAccent: '#224466',
+    wallColor: 0x7788aa,
+    coverColor: 0x6688a0,
+    platColor: 0x8899bb,
+    rampColor: 0x99aacc,
+  },
+
+  // --- SANDSTONE: warm desert/ancient temple, earthy oranges and browns.
+  //     Medium-high brightness, golden hour lighting, great character contrast ---
+  sandstone: {
+    sky: ['#cc8844', '#ddaa66', '#eebb77', '#ffddaa'],
+    fog: 0xddbb88,
+    fogDensity: 0.003,
+    ground: 0x8a7560,
+    grid1: 0x998870,
+    grid2: 0x887760,
+    ambient: 0xddbb88,
+    ambientIntensity: 1.3,
+    sunColor: 0xffcc77,
+    sunIntensity: 2.2,
+    labelColor: '#553311',
+    hudAccent: '#ffddaa',
+    wallColor: 0x9a8568,
+    coverColor: 0x887558,
+    platColor: 0xaa9575,
+    rampColor: 0xbba585,
+  },
+
+  // --- VOID: deep black with neon accent pops, high contrast dark mode.
+  //     Nearly black environment, characters and spells glow intensely ---
+  void: {
+    sky: ['#020208', '#050510', '#080818', '#030308'],
+    fog: 0x020205,
+    fogDensity: 0.008,
+    ground: 0x0a0a12,
+    grid1: 0x181828,
+    grid2: 0x101018,
+    ambient: 0x445566,
+    ambientIntensity: 0.4,
+    sunColor: 0x8888ff,
+    sunIntensity: 1.0,
+    labelColor: '#44ffaa',
+    hudAccent: '#44ffaa',
+    wallColor: 0x181825,
+    coverColor: 0x14141e,
+    platColor: 0x20202e,
+    rampColor: 0x282838,
   },
 };

@@ -172,6 +172,65 @@ export const sfx = {
     osc.start(c.currentTime); osc.stop(c.currentTime + 0.22);
   },
 
+  // --- Camping cues ---
+  growl() {
+    if (throttle('growl')) return;
+    const c = getCtx();
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(70, c.currentTime);
+    osc.frequency.linearRampToValueAtTime(50, c.currentTime + 0.6);
+    gain.gain.setValueAtTime(0.18, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.7);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.7);
+    playNoise(0.35, 0.04, 'lowpass', 200);
+  },
+
+  breath() {
+    if (throttle('breath')) return;
+    playNoise(0.55, 0.08, 'bandpass', 700);
+    playNoise(0.4, 0.05, 'bandpass', 1400);
+  },
+
+  fart() {
+    if (throttle('fart')) return;
+    const c = getCtx();
+    // Pitch wobble for that classic comedic tone
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sawtooth';
+    const baseHz = 110 + Math.random() * 50;
+    osc.frequency.setValueAtTime(baseHz, c.currentTime);
+    // Wobble: ramp up then down
+    osc.frequency.exponentialRampToValueAtTime(baseHz * 0.55, c.currentTime + 0.18);
+    osc.frequency.exponentialRampToValueAtTime(baseHz * 0.85, c.currentTime + 0.28);
+    osc.frequency.exponentialRampToValueAtTime(baseHz * 0.45, c.currentTime + 0.45);
+    gain.gain.setValueAtTime(0.22, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.5);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.5);
+    // Wet noise burst layered on top
+    playNoise(0.45, 0.12, 'bandpass', 320);
+  },
+
+  // Short, distinctive "pop" for enemy fire so you can hear where shots come from
+  npcShot() {
+    if (throttle('npcShot')) return;
+    const c = getCtx();
+    playNoise(0.06, 0.18, 'highpass', 1800);
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(520, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(140, c.currentTime + 0.07);
+    gain.gain.setValueAtTime(0.14, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.1);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.1);
+  },
+
   rocket() {
     // Whoosh launch — downward sweep + hiss
     const c = getCtx();
