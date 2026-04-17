@@ -3,7 +3,7 @@ import { input } from './input.js';
 import { sfx } from './audio.js';
 import { settings } from './settings.js';
 import { getNPCHitboxes, damageNPC, onPlayerHit } from './npc.js';
-import { getBlockers, pickRandomSpawn, getGroundMesh } from './world.js';
+import { getBlockers, pickRandomSpawn, getSpawnPoints, getGroundMesh } from './world.js';
 import { CLASS_DEFS, buildClassModel, loadClassModel } from './classes.js';
 import { updateModelAnimation, playAnimation as playAnim } from './modelLoader.js';
 
@@ -169,6 +169,10 @@ const CLASS_RANGED_GLOW = {
   rogue:  0xffffff,
 };
 function classRangedSfx(id) {
+  // Class def may override via ranged.sfx ('rocket' | 'cannon' | 'rifle' | 'pistol').
+  const def = CLASS_DEFS[id];
+  const override = def?.ranged?.sfx;
+  if (override && typeof sfx[override] === 'function') return () => sfx[override]();
   switch (id) {
     case 'knight': return () => sfx.cannon();
     case 'archer': return () => sfx.rifle();
@@ -532,7 +536,19 @@ export function updatePlayer(dt, camera) {
 
   const meleePressed = wantsMelee || (combatKeys.melee && input.justPressed(combatKeys.melee));
   if (meleePressed && meleeCooldownTimer <= 0 && input.isPointerLocked) {
-    performMelee();
+    const combo = Math.max(1, classDef.melee.combo ?? 1);
+    const comboDelayMs = (classDef.melee.comboDelay ?? 0.12) * 1000;
+    const dmgFactor = 1 / combo;
+    // First stab — swings to one side (left) for combos, centered otherwise.
+    performMelee(dmgFactor, combo > 1 ? -1 : 0);
+    // Schedule follow-up stabs alternating sides for a left/right visual.
+    for (let i = 1; i < combo; i++) {
+      const side = (i % 2 === 0) ? -1 : 1;
+      setTimeout(() => {
+        if (!sceneRef) return;
+        performMelee(dmgFactor, side);
+      }, comboDelayMs * i);
+    }
     meleeCooldownTimer = classDef.melee.cooldown;
     meleeSwingTimer = MELEE_SWING_DURATION;
     castAnimTimer = 0.6;
@@ -707,10 +723,10 @@ function updateCamera(camera, playerPos, dt) {
 }
 
 // --- Melee attack ---
-function performMelee() {
+function performMelee(damageFactor = 1.0, side = 0) {
   if (!sceneRef) return;
   const melee = classDef.melee;
-  const damage = melee.damage;
+  const damage = melee.damage * damageFactor;
   const fwdX = -Math.sin(yaw);
   const fwdZ = -Math.cos(yaw);
   const npcTargets = getNPCHitboxes();
@@ -756,25 +772,33 @@ function performMelee() {
     m.userData.onMeleeHit(_p.clone(), damage);
   }
 
-  spawnMeleeVFX();
+  spawnMeleeVFX(side);
   sfx.slamImpact();
 }
 
-function spawnMeleeVFX() {
+function spawnMeleeVFX(side = 0) {
   if (!sceneRef) return;
-  const colors = { knight: 0xcc8855, archer: 0xaaaacc, mage: 0xaa66ff, rogue: 0xcc2233 };
-  const color = colors[classId] || 0xffffff;
+  const colors = { knight: 0xcc8855, archer: 0xaaaacc, mage: 0xaa66ff, rogue: 0x4488ff };
+  const color = classDef.melee?.vfxColor ?? colors[classId] ?? 0xffffff;
 
-  // Build arc as a flat fan mesh in XZ plane, centered on player forward
+  // Build arc as a flat fan mesh in XZ plane, centered on player forward.
+  // Uses the class's melee.arc width. `side` offsets the fan center slightly
+  // left (-1) or right (+1) to show which hand is stabbing in combo attacks.
   const range = classDef.melee.range;
   const segments = 24;
-  const halfArc = Math.PI / 2; // 90 degrees each side = 180 total
-  const fwdAngle = yaw; // player facing angle
+  const fullArc = classDef.melee.arc ?? Math.PI; // total arc width
+  const halfArc = fullArc / 2;
+  // Only shift laterally if there's frontal room left (arc < 180°). For a
+  // full 180° arc, both stabs span the whole frontal hemisphere; timing
+  // differentiates left vs right, not positioning.
+  const maxBias = Math.max(0, (Math.PI - fullArc) / 2);
+  const sideBias = side * Math.min(maxBias, fullArc * 0.35);
+  const fwdAngle = yaw + sideBias;
 
   // Create fan geometry manually: center vertex + arc vertices
   const verts = [0, 0, 0]; // center at origin
   for (let i = 0; i <= segments; i++) {
-    const a = fwdAngle - halfArc + (i / segments) * (halfArc * 2);
+    const a = fwdAngle - halfArc + (i / segments) * fullArc;
     // Forward is (-sin(yaw), -cos(yaw)), so arc in XZ:
     verts.push(-Math.sin(a) * range, 0, -Math.cos(a) * range);
   }
@@ -840,16 +864,33 @@ function computeMuzzleAndDir(camera) {
 function performRanged(camera) {
   if (!sceneRef || !camera) return;
   const ranged = classDef.ranged;
-  const { muzzle, dir } = computeMuzzleAndDir(camera);
-  const color = aimTuning.colorOverride ?? getClassProjectileColor();
-  const glow = aimTuning.glowOverride ?? CLASS_RANGED_GLOW[classId] ?? null;
-  const opts = {
-    speed: ranged.projectileSpeed, damage: ranged.damage * aimTuning.damageScale,
-    color, size: 0.2, range: 60,
+  const shots = Math.max(1, ranged.multishot ?? 1);
+  const delayMs = (ranged.shotDelay ?? 0.1) * 1000;
+
+  const fireOne = () => {
+    if (!sceneRef || !camera) return;
+    const { muzzle, dir } = computeMuzzleAndDir(camera);
+    const color = aimTuning.colorOverride ?? ranged.color ?? getClassProjectileColor();
+    const glow = aimTuning.glowOverride ?? ranged.glow ?? CLASS_RANGED_GLOW[classId] ?? null;
+    const opts = {
+      speed: ranged.projectileSpeed,
+      damage: ranged.damage * aimTuning.damageScale,
+      color,
+      size: ranged.size ?? 0.2,
+      range: ranged.range ?? 60,
+      aoe: ranged.aoe,
+      flame: ranged.flame === true,
+      arrow: ranged.arrow === true,
+      shadow: ranged.shadow === true,
+      dagger: ranged.dagger === true,
+    };
+    if (glow != null) opts.glowColor = glow;
+    fireProjectile(muzzle, dir, opts);
+    (aimTuning.sfxOverride || classRangedSfx(classId))();
   };
-  if (glow != null) opts.glowColor = glow;
-  fireProjectile(muzzle, dir, opts);
-  (aimTuning.sfxOverride || classRangedSfx(classId))();
+
+  fireOne();
+  for (let i = 1; i < shots; i++) setTimeout(fireOne, delayMs * i);
 }
 
 // --- Spells ---
@@ -904,6 +945,37 @@ function performSpell2(camera) {
     case 'rogue':
       spawnSmokeBombVFX(muzzle); sfx.slam(); break;
   }
+}
+
+// Fiery expanding sphere + orange point light when an AOE projectile lands.
+function spawnExplosionVFX(point, radius) {
+  if (!sceneRef) return;
+  const geo = new THREE.SphereGeometry(0.4, 16, 12);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff6622, transparent: true, opacity: 0.9, depthWrite: false });
+  const ball = new THREE.Mesh(geo, mat);
+  ball.position.copy(point);
+  sceneRef.add(ball);
+
+  const light = new THREE.PointLight(0xff4422, 10, radius * 3);
+  light.position.copy(point);
+  sceneRef.add(light);
+
+  const start = performance.now();
+  const step = () => {
+    const e = (performance.now() - start) / 450;
+    if (e >= 1) {
+      sceneRef.remove(ball); sceneRef.remove(light);
+      geo.dispose(); mat.dispose();
+      return;
+    }
+    const k = 1 - e;
+    ball.scale.setScalar(1 + e * radius * 1.8);
+    mat.opacity = 0.9 * k;
+    mat.color.setRGB(1.0, 0.4 + 0.4 * k, 0.1 * k); // fade orange → red
+    light.intensity = 10 * k;
+    requestAnimationFrame(step);
+  };
+  step();
 }
 
 // Floating damage number — drifts up from the hit point and fades.
@@ -998,26 +1070,330 @@ function getClassProjectileColor() {
   return colors[classId] || 0xffcc00;
 }
 
+// Blue-centred radial gradient — used by Phantom's Spirit Daggers so the
+// aura/trail don't pick up the fire texture's white-yellow hot-spot.
+let _blueGlowTex = null;
+export function getBlueGlowTexture() {
+  if (_blueGlowTex) return _blueGlowTex;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0.00, 'rgba(140,190,255,1.0)');
+  g.addColorStop(0.30, 'rgba(90,150,255,0.85)');
+  g.addColorStop(0.65, 'rgba(50,100,210,0.35)');
+  g.addColorStop(1.00, 'rgba(20,40,80,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  _blueGlowTex = new THREE.CanvasTexture(c);
+  return _blueGlowTex;
+}
+
+// Procedurally-generated fire texture (radial gradient) — cached.
+let _fireTex = null;
+export function getFireTexture() {
+  if (_fireTex) return _fireTex;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0.00, 'rgba(255,255,220,1.0)');
+  g.addColorStop(0.18, 'rgba(255,230,140,0.95)');
+  g.addColorStop(0.42, 'rgba(255,150,40,0.75)');
+  g.addColorStop(0.70, 'rgba(210,50,20,0.35)');
+  g.addColorStop(1.00, 'rgba(100,15,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  // Subtle noise flecks for texture
+  for (let i = 0; i < 40; i++) {
+    const x = 20 + Math.random() * 88;
+    const y = 20 + Math.random() * 88;
+    const r = 1 + Math.random() * 2;
+    ctx.fillStyle = `rgba(255,${180 + Math.random() * 60},${50 + Math.random() * 80},${0.3 + Math.random() * 0.3})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  _fireTex = new THREE.CanvasTexture(c);
+  return _fireTex;
+}
+
+// Short-lived ember that drifts upward and fades — trails behind fireballs
+// (default orange) or magic arrows (pass a different color). Optionally
+// accepts a texture so classes with pure-colour palettes (e.g. Phantom's blue)
+// don't pick up the fire texture's white-yellow hot-spot.
+export function spawnFireEmber(pos, color = 0xffaa44, tex = null) {
+  const mat = new THREE.SpriteMaterial({
+    map: tex || getFireTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, opacity: 0.8, color,
+  });
+  const s = new THREE.Sprite(mat);
+  s.scale.setScalar(0.25 + Math.random() * 0.2);
+  s.position.copy(pos);
+  s.position.x += (Math.random() - 0.5) * 0.2;
+  s.position.y += (Math.random() - 0.5) * 0.2;
+  s.position.z += (Math.random() - 0.5) * 0.2;
+  sceneRef.add(s);
+  const vy = 0.6 + Math.random() * 0.6;
+  const vx = (Math.random() - 0.5) * 0.4;
+  const vz = (Math.random() - 0.5) * 0.4;
+  const start = performance.now();
+  const step = () => {
+    const e = (performance.now() - start) / 450;
+    if (e >= 1) { sceneRef.remove(s); mat.dispose(); return; }
+    const dt = 0.016;
+    s.position.x += vx * dt;
+    s.position.y += vy * dt;
+    s.position.z += vz * dt;
+    mat.opacity = 0.8 * (1 - e);
+    s.scale.multiplyScalar(0.98);
+    requestAnimationFrame(step);
+  };
+  step();
+}
+
+// Build a spirit-dagger visual — small blade-like shape (double-tip diamond)
+// along +Z with a soft additive aura. Group will spin around its own +Z during
+// flight for a "whirling throwing dagger" look.
+export function buildSpiritDaggerVisual(size, color = 0x4488ff, glow = 0xaaddff) {
+  const group = new THREE.Group();
+
+  // Solid blade — single blue colour; no bright spine highlight that could
+  // read as "white" against bloom.
+  const bladeMat = new THREE.MeshBasicMaterial({ color });
+
+  const tipGeo = new THREE.ConeGeometry(size * 0.35, size * 1.6, 8);
+  tipGeo.rotateX(Math.PI / 2);
+  tipGeo.translate(0, 0, size * 0.8);
+  const tip = new THREE.Mesh(tipGeo, bladeMat);
+  group.add(tip);
+
+  const buttGeo = new THREE.ConeGeometry(size * 0.28, size * 0.7, 8);
+  buttGeo.rotateX(-Math.PI / 2);
+  buttGeo.translate(0, 0, -size * 0.35);
+  const butt = new THREE.Mesh(buttGeo, bladeMat);
+  group.add(butt);
+
+  // Blue-only aura using the dedicated blue radial gradient (no white hot-spot).
+  const auraMat = new THREE.SpriteMaterial({
+    map: getBlueGlowTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, color, opacity: 0.55,
+  });
+  const aura = new THREE.Sprite(auraMat);
+  aura.scale.set(size * 2.5, size * 6, 1);
+  group.add(aura);
+
+  const light = new THREE.PointLight(color, 2.5, size * 8, 2);
+  group.add(light);
+
+  group.userData._daggerParts = { bladeMat, auraMat };
+  return group;
+}
+
+// Build a dark-magic shadow-bolt visual — dark purple orb with swirling
+// additive aura and a bright crackle core peeking through. Caller adds to scene
+// and positions; travel direction isn't needed (it's a radial visual).
+export function buildShadowBoltVisual(size, color = 0x220033, glow = 0xaa44ff) {
+  const group = new THREE.Group();
+
+  // Dark outer orb — solid, slightly lit from within.
+  const coreGeo = new THREE.SphereGeometry(size * 0.7, 14, 10);
+  const coreMat = new THREE.MeshBasicMaterial({ color });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  group.add(core);
+
+  // Bright crackle core — small, intense; catches bloom.
+  const hotGeo = new THREE.SphereGeometry(size * 0.3, 10, 8);
+  const hotMat = new THREE.MeshBasicMaterial({ color: glow });
+  const hot = new THREE.Mesh(hotGeo, hotMat);
+  group.add(hot);
+
+  // Swirling purple aura (additive, rotates)
+  const aura1Mat = new THREE.SpriteMaterial({
+    map: getFireTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: glow, opacity: 0.65,
+  });
+  const aura1 = new THREE.Sprite(aura1Mat);
+  aura1.scale.setScalar(size * 3.8);
+  group.add(aura1);
+
+  // Secondary darker layer, counter-rotating
+  const aura2Mat = new THREE.SpriteMaterial({
+    map: getFireTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: 0x6633aa, opacity: 0.45,
+    rotation: Math.PI / 2,
+  });
+  const aura2 = new THREE.Sprite(aura2Mat);
+  aura2.scale.setScalar(size * 2.9);
+  group.add(aura2);
+
+  // Purple point light
+  const light = new THREE.PointLight(glow, 5, size * 12, 2);
+  group.add(light);
+
+  group.userData._shadowParts = { aura1Mat, aura2Mat, coreMat, hotMat };
+  return group;
+}
+
+// Shadow wisp — drifts and expands while fading, for the bolt's trail.
+export function spawnShadowWisp(pos, color = 0x6633aa) {
+  if (!sceneRef) return;
+  const mat = new THREE.SpriteMaterial({
+    map: getFireTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, opacity: 0.55, color,
+  });
+  const s = new THREE.Sprite(mat);
+  s.scale.setScalar(0.3 + Math.random() * 0.25);
+  s.position.copy(pos);
+  s.position.x += (Math.random() - 0.5) * 0.25;
+  s.position.y += (Math.random() - 0.5) * 0.25;
+  s.position.z += (Math.random() - 0.5) * 0.25;
+  sceneRef.add(s);
+  const vx = (Math.random() - 0.5) * 0.4;
+  const vy = (Math.random() - 0.4) * 0.3;
+  const vz = (Math.random() - 0.5) * 0.4;
+  const start = performance.now();
+  const step = () => {
+    const e = (performance.now() - start) / 550;
+    if (e >= 1) { sceneRef.remove(s); mat.dispose(); return; }
+    const dt = 0.016;
+    s.position.x += vx * dt;
+    s.position.y += vy * dt;
+    s.position.z += vz * dt;
+    mat.opacity = 0.55 * (1 - e);
+    s.scale.multiplyScalar(1.012); // expand as it dissipates
+    requestAnimationFrame(step);
+  };
+  step();
+}
+
+// Build a magic-arrow visual — a glowing shaft + arrowhead oriented along +Z,
+// with an additive glow halo and a point light. Caller should align the group
+// to the travel direction (e.g. `group.quaternion.setFromUnitVectors(...)`).
+export function buildMagicArrowVisual(size, color = 0x66ff66, glow = 0xaaffaa) {
+  const group = new THREE.Group();
+
+  // Shaft — cylinder rotated to point along +Z.
+  const shaftGeo = new THREE.CylinderGeometry(size * 0.12, size * 0.12, size * 2.2, 8);
+  shaftGeo.rotateX(Math.PI / 2);
+  const shaftMat = new THREE.MeshBasicMaterial({ color });
+  const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+  group.add(shaft);
+
+  // Arrowhead cone — tip at +Z end of the shaft.
+  const headGeo = new THREE.ConeGeometry(size * 0.38, size * 0.7, 10);
+  headGeo.rotateX(Math.PI / 2);
+  const headMat = new THREE.MeshBasicMaterial({ color: glow });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.z = size * 1.45;
+  group.add(head);
+
+  // Fletching — two small cones at the back for a classic arrow silhouette.
+  const flGeo = new THREE.ConeGeometry(size * 0.3, size * 0.45, 4);
+  flGeo.rotateX(Math.PI / 2);
+  const flMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
+  const fl = new THREE.Mesh(flGeo, flMat);
+  fl.position.z = -size * 1.15;
+  fl.rotation.z = Math.PI / 4;
+  group.add(fl);
+
+  // Elongated additive glow halo around the arrow for the "magic" aura.
+  const auraMat = new THREE.SpriteMaterial({
+    map: getFireTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: glow, opacity: 0.75,
+  });
+  const aura = new THREE.Sprite(auraMat);
+  aura.scale.set(size * 2.4, size * 5.0, 1);
+  group.add(aura);
+
+  // Bright point light travelling with the arrow.
+  const light = new THREE.PointLight(glow, 4, size * 10, 2);
+  group.add(light);
+
+  group.userData._arrowParts = { shaftMat, headMat, flMat, auraMat };
+  return group;
+}
+
+// Build the flaming-projectile visual (sprite + core + light). Caller is
+// responsible for adding it to the scene and positioning. Group carries
+// `userData._flameParts` so callers can flicker sprite rotations.
+export function buildFlameProjectileVisual(size) {
+  const group = new THREE.Group();
+
+  const sprMat = new THREE.SpriteMaterial({
+    map: getFireTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: 0xffffff,
+  });
+  const sprite = new THREE.Sprite(sprMat);
+  sprite.scale.setScalar(size * 4.5);
+  group.add(sprite);
+
+  const sprMat2 = new THREE.SpriteMaterial({
+    map: getFireTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: 0xff8833, opacity: 0.7,
+    rotation: Math.PI / 3,
+  });
+  const sprite2 = new THREE.Sprite(sprMat2);
+  sprite2.scale.setScalar(size * 3.2);
+  group.add(sprite2);
+
+  const coreGeo = new THREE.SphereGeometry(size * 0.45, 10, 8);
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  group.add(core);
+
+  const light = new THREE.PointLight(0xff6622, 6, size * 14, 2);
+  group.add(light);
+
+  group.userData._flameParts = { sprMat, sprMat2, coreGeo, coreMat };
+  return group;
+}
+
+const _arrowFwd = new THREE.Vector3(0, 0, 1);
+
 function fireProjectile(from, dir, opts) {
-  const { damage, color, aoe, dot } = opts;
+  const { damage, color, aoe, dot, flame, arrow, shadow, dagger } = opts;
   const speed = opts.speed * aimTuning.speedScale;
   const size = opts.size * aimTuning.sizeScale;
   const maxDist = (opts.range || 60) * aimTuning.rangeScale;
 
-  const geo = new THREE.SphereGeometry(size, 10, 8);
-  const mat = new THREE.MeshBasicMaterial({ color: opts.glowColor || color });
-  const ball = new THREE.Mesh(geo, mat); ball.position.copy(from);
-  const core = new THREE.Mesh(new THREE.SphereGeometry(size * 0.6, 8, 6), new THREE.MeshBasicMaterial({ color }));
-  ball.add(core); sceneRef.add(ball);
+  let mesh;
+  if (flame) {
+    mesh = buildFlameProjectileVisual(size);
+    mesh.position.copy(from);
+    sceneRef.add(mesh);
+  } else if (shadow) {
+    mesh = buildShadowBoltVisual(size, color, opts.glowColor ?? color);
+    mesh.position.copy(from);
+    sceneRef.add(mesh);
+  } else if (arrow) {
+    mesh = buildMagicArrowVisual(size, color, opts.glowColor ?? color);
+    mesh.position.copy(from);
+    mesh.quaternion.setFromUnitVectors(_arrowFwd, dir.clone().normalize());
+    sceneRef.add(mesh);
+  } else if (dagger) {
+    mesh = buildSpiritDaggerVisual(size, color, opts.glowColor ?? color);
+    mesh.position.copy(from);
+    mesh.quaternion.setFromUnitVectors(_arrowFwd, dir.clone().normalize());
+    sceneRef.add(mesh);
+  } else {
+    const geo = new THREE.SphereGeometry(size, 10, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: opts.glowColor || color });
+    const ball = new THREE.Mesh(geo, mat); ball.position.copy(from);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(size * 0.6, 8, 6), new THREE.MeshBasicMaterial({ color }));
+    ball.add(core); sceneRef.add(ball);
+    mesh = ball;
+  }
 
   projectiles.push({
-    mesh: ball,
+    mesh,
     pos: from.clone(),
     dir: dir.clone(),
     speed,
     travelled: 0,
     maxDist,
     damage, aoe: aoe || 0, dot,
+    flame: !!flame, arrow: !!arrow, shadow: !!shadow, dagger: !!dagger,
+    trailColor: opts.glowColor ?? color,
+    emberT: 0,
   });
 }
 
@@ -1061,7 +1437,7 @@ function updateProjectiles(dt) {
       // Generic target callback (used by aim-calibration dummies).
       const onHit = hit.object.userData.onProjectileHit;
       if (typeof onHit === 'function') onHit(hit.point.clone(), p.damage);
-      if (p.aoe > 0) splashDamage(hit.point, p.aoe, p.damage);
+      if (p.aoe > 0) { splashDamage(hit.point, p.aoe, p.damage); spawnExplosionVFX(hit.point, p.aoe); }
       p.mesh.position.copy(hit.point);
       consumed = true;
     }
@@ -1070,13 +1446,72 @@ function updateProjectiles(dt) {
       p.pos.addScaledVector(p.dir, step);
       p.travelled += step;
       p.mesh.position.copy(p.pos);
+
+      // Flame projectiles: flicker sprites + emit embers on a cadence.
+      if (p.flame) {
+        const parts = p.mesh.userData._flameParts;
+        if (parts) {
+          parts.sprMat.rotation += dt * 4.0;
+          parts.sprMat2.rotation -= dt * 3.2;
+          const pulse = 1 + Math.sin(performance.now() * 0.025) * 0.08;
+          p.mesh.scale.setScalar(pulse);
+        }
+        p.emberT += dt;
+        if (p.emberT > 0.04) { p.emberT = 0; spawnFireEmber(p.pos); }
+      }
+
+      // Shadow bolt: swirling aura + purple wisp trail.
+      if (p.shadow) {
+        const parts = p.mesh.userData._shadowParts;
+        if (parts) {
+          parts.aura1Mat.rotation += dt * 2.0;
+          parts.aura2Mat.rotation -= dt * 1.5;
+          const pulse = 1 + Math.sin(performance.now() * 0.018) * 0.1;
+          p.mesh.scale.setScalar(pulse);
+        }
+        p.emberT += dt;
+        if (p.emberT > 0.06) { p.emberT = 0; spawnShadowWisp(p.pos, p.trailColor); }
+      }
+
+      // Spirit dagger: whirl around travel axis + faint blue trail.
+      if (p.dagger) {
+        const parts = p.mesh.userData._daggerParts;
+        if (parts) {
+          p.mesh.rotateZ(dt * 14);
+          const pulse = 0.5 + Math.sin(performance.now() * 0.035) * 0.1;
+          parts.auraMat.opacity = pulse;
+        }
+        p.emberT += dt;
+        if (p.emberT > 0.05) {
+          p.emberT = 0;
+          spawnFireEmber(p.pos, p.trailColor, getBlueGlowTexture());
+        }
+      }
+
+      // Magic arrow: keep tip aligned to travel dir, pulse the aura, leave a green trail.
+      if (p.arrow) {
+        const parts = p.mesh.userData._arrowParts;
+        if (parts) {
+          const pulse = 0.9 + Math.sin(performance.now() * 0.02) * 0.1;
+          parts.auraMat.opacity = 0.75 * pulse;
+        }
+        p.emberT += dt;
+        if (p.emberT > 0.05) { p.emberT = 0; spawnFireEmber(p.pos, p.trailColor); }
+      }
+
       if (p.travelled >= p.maxDist) consumed = true;
     }
 
     if (consumed) {
       sceneRef.remove(p.mesh);
-      p.mesh.geometry.dispose(); p.mesh.material.dispose();
-      p.mesh.children.forEach((c) => { c.geometry.dispose(); c.material.dispose(); });
+      // Dispose everything under the projectile root (handles Groups and Meshes).
+      p.mesh.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          if (o.material.map && o.material.map !== _fireTex) o.material.map.dispose();
+          o.material.dispose();
+        }
+      });
       projectiles.splice(i, 1);
     }
   }
@@ -1100,8 +1535,43 @@ function damagePlayer(amount) {
   if (playerHP <= 0) { playerHP = 0; respawnPlayer(); }
 }
 
+// Pick a spawn point at least `minDist` m from every living NPC. If none
+// qualifies, return the spawn with the largest min-distance (least crowded).
+// Adds a bit of randomness among equally-safe candidates so respawn isn't
+// always the same corner.
+function pickSafeSpawn(mapName, minDist = 6) {
+  const spawns = getSpawnPoints(mapName);
+  const npcMeshes = getNPCHitboxes();
+  const livingNpcs = [];
+  const seen = new Set();
+  for (const m of npcMeshes) {
+    const npc = m.userData.npcRef;
+    if (!npc || npc.dead || seen.has(npc)) continue;
+    seen.add(npc);
+    livingNpcs.push(npc);
+  }
+  if (livingNpcs.length === 0) return spawns[Math.floor(Math.random() * spawns.length)];
+
+  const scored = spawns.map((sp) => {
+    let md = Infinity;
+    for (const npc of livingNpcs) {
+      const dx = npc.mesh.position.x - sp.x;
+      const dz = npc.mesh.position.z - sp.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < md) md = d;
+    }
+    return { sp, md };
+  });
+  const safe = scored.filter((s) => s.md >= minDist);
+  if (safe.length > 0) {
+    return safe[Math.floor(Math.random() * safe.length)].sp;
+  }
+  scored.sort((a, b) => b.md - a.md);
+  return scored[0].sp;
+}
+
 function respawnPlayer() {
-  const sp = pickRandomSpawn('range');
+  const sp = pickSafeSpawn('range', 6);
   pos.set(sp.x, 2.5, sp.z);
   vel.set(0, 0, 0);
   playerHP = playerMaxHP;

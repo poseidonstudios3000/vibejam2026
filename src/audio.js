@@ -270,6 +270,137 @@ export const sfx = {
     ring.start(c.currentTime); ring.stop(c.currentTime + 0.2);
   },
 
+  daggerThrow() {
+    // Silent-but-deadly — soft air-whisk + quick metallic "tink" + a thin
+    // high-frequency shimmer. No sub-bass so it stays subtle and assassin-y.
+    const c = getCtx();
+    const t0 = c.currentTime;
+    // Air whisk — very short highpass noise burst
+    playNoise(0.06, 0.08, 'highpass', 4300);
+    // Metallic tink — quick triangle falling from high pitch
+    const tink = c.createOscillator();
+    const tG = c.createGain();
+    tink.type = 'triangle';
+    tink.frequency.setValueAtTime(1850, t0);
+    tink.frequency.exponentialRampToValueAtTime(680, t0 + 0.06);
+    tG.gain.setValueAtTime(0.09, t0);
+    tG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.08);
+    tink.connect(tG); tG.connect(masterGain);
+    tink.start(t0); tink.stop(t0 + 0.09);
+    // Thin shimmer tail — phantom/spirit whisper
+    const shim = c.createOscillator();
+    const sg = c.createGain();
+    shim.type = 'sine';
+    shim.frequency.setValueAtTime(3200, t0);
+    shim.frequency.exponentialRampToValueAtTime(2200, t0 + 0.1);
+    sg.gain.setValueAtTime(0.045, t0);
+    sg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.12);
+    shim.connect(sg); sg.connect(masterGain);
+    shim.start(t0); shim.stop(t0 + 0.14);
+  },
+
+  shadowBolt() {
+    // Dark magic cast: a "gathering" reverse-whoosh swells into a dissonant
+    // falling chord with a brief high shimmer at the cast moment.
+    const c = getCtx();
+    const t0 = c.currentTime;
+
+    // 1) Reverse-swell whoosh — bandpass noise that grows then tails off,
+    //    giving the "gathering energy" feeling before release.
+    const noise = c.createBufferSource();
+    const nb = c.createBuffer(1, c.sampleRate * 0.55, c.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * 0.3;
+    noise.buffer = nb;
+    const nf = c.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.value = 650;
+    nf.Q.value = 1.8;
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.0001, t0);
+    ng.gain.exponentialRampToValueAtTime(0.22, t0 + 0.2); // swell
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+    noise.connect(nf); nf.connect(ng); ng.connect(masterGain);
+    noise.start(t0); noise.stop(t0 + 0.55);
+
+    // 2) Dissonant falling sine pair — the "dark chord". A flatted interval
+    //    (~35 cents below an octave) creates the eerie minor-dissonance.
+    const oscA = c.createOscillator();
+    const gA = c.createGain();
+    oscA.type = 'sine';
+    oscA.frequency.setValueAtTime(220, t0);
+    oscA.frequency.exponentialRampToValueAtTime(72, t0 + 0.45);
+    gA.gain.setValueAtTime(0.22, t0);
+    gA.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
+    oscA.connect(gA); gA.connect(masterGain);
+    oscA.start(t0); oscA.stop(t0 + 0.52);
+
+    const oscB = c.createOscillator();
+    const gB = c.createGain();
+    oscB.type = 'triangle';
+    oscB.detune.setValueAtTime(-35, t0);
+    oscB.frequency.setValueAtTime(330, t0);
+    oscB.frequency.exponentialRampToValueAtTime(108, t0 + 0.4);
+    gB.gain.setValueAtTime(0.14, t0);
+    gB.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
+    oscB.connect(gB); gB.connect(masterGain);
+    oscB.start(t0); oscB.stop(t0 + 0.48);
+
+    // 3) Bell-like shimmer at the cast peak — bright triangle that sparks and
+    //    falls quickly; timed to start as the swell reaches its max.
+    const ping = c.createOscillator();
+    const pG = c.createGain();
+    ping.type = 'triangle';
+    ping.frequency.setValueAtTime(900, t0 + 0.18);
+    ping.frequency.exponentialRampToValueAtTime(310, t0 + 0.33);
+    pG.gain.setValueAtTime(0.0001, t0);
+    pG.gain.setValueAtTime(0.0001, t0 + 0.18);
+    pG.gain.exponentialRampToValueAtTime(0.13, t0 + 0.2);
+    pG.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+    ping.connect(pG); pG.connect(masterGain);
+    ping.start(t0); ping.stop(t0 + 0.38);
+
+    // 4) Subharmonic weight — a low sine hum for body.
+    const sub = c.createOscillator();
+    const subG = c.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(55, t0);
+    sub.frequency.exponentialRampToValueAtTime(34, t0 + 0.4);
+    subG.gain.setValueAtTime(0.18, t0);
+    subG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.48);
+    sub.connect(subG); subG.connect(masterGain);
+    sub.start(t0); sub.stop(t0 + 0.5);
+  },
+
+  fireball() {
+    // Airy whoosh + crackling sizzle + low rumble — reads as flame, not metallic.
+    const c = getCtx();
+    // Whoosh body (bandpass noise, longer decay)
+    playNoise(0.42, 0.24, 'bandpass', 1200);
+    // Crackle — quick high-freq sizzle layered on top
+    playNoise(0.22, 0.14, 'highpass', 3800);
+    // Descending sawtooth — the "rush" of fire moving forward
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(420, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(90, c.currentTime + 0.35);
+    gain.gain.setValueAtTime(0.2, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.4);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.4);
+    // Low body rumble — gives weight
+    const rumble = c.createOscillator();
+    const rg = c.createGain();
+    rumble.type = 'sine';
+    rumble.frequency.setValueAtTime(72, c.currentTime);
+    rumble.frequency.exponentialRampToValueAtTime(42, c.currentTime + 0.3);
+    rg.gain.setValueAtTime(0.22, c.currentTime);
+    rg.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.38);
+    rumble.connect(rg); rg.connect(masterGain);
+    rumble.start(c.currentTime); rumble.stop(c.currentTime + 0.38);
+  },
+
   cannon() {
     // Deep, heavy boom — sub-bass thump + body + crackle
     const c = getCtx();

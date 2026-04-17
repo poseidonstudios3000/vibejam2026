@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadCharacterModel, playAnimation } from './modelLoader.js';
 
 // --- CLASS DEFINITIONS ---
@@ -21,8 +22,13 @@ export const CLASS_DEFS = {
     speed: 70, // percent of base speed
     mana: 100,
     manaRegen: 2,
-    melee: { name: 'Greatsword', damage: 35, range: 2.5, arc: Math.PI * 0.6, cooldown: 1.0 },
-    ranged: { name: 'Shield Bash', damage: 20, manaCost: 25, projectileSpeed: 18, cooldown: 1.5, stun: 1.0 },
+    melee: { name: 'Sword', damage: 35, range: 2.5, arc: Math.PI, cooldown: 1.0 },
+    ranged: {
+      name: 'Fireball', damage: 28, manaCost: 25, projectileSpeed: 18, cooldown: 1.3,
+      // Visual + splash overrides consumed by performRanged / fireProjectile.
+      color: 0xff4422, glow: 0xffaa33, size: 0.2, aoe: 2.5,
+      sfx: 'fireball', flame: true,
+    },
     spell1: { name: 'Fortify', key: 'Q', manaCost: 40, cooldown: 12, duration: 4, armorBonus: 50, desc: '+50 armor for 4s' },
     spell2: { name: 'Ground Slam', key: 'E', manaCost: 60, cooldown: 18, damage: 30, radius: 5, knockback: 12, desc: 'AOE knockback, 30 dmg' },
     passive: { name: 'Heavy Plate', desc: '20% less damage taken, 15% slower' },
@@ -43,8 +49,12 @@ export const CLASS_DEFS = {
     speed: 95,
     mana: 100,
     manaRegen: 2,
-    melee: { name: 'Dagger', damage: 20, range: 1.5, arc: Math.PI * 0.4, cooldown: 0.8 },
-    ranged: { name: 'Bow Shot', damage: 40, manaCost: 15, projectileSpeed: 35, cooldown: 0.8 },
+    melee: { name: 'Dagger', damage: 20, range: 1.5, arc: Math.PI, cooldown: 0.8 },
+    ranged: {
+      name: 'Bow Shot', damage: 40, manaCost: 15, projectileSpeed: 35, cooldown: 0.8,
+      color: 0x66ff66, glow: 0xaaffaa, size: 0.125,
+      sfx: 'rifle', arrow: true,
+    },
     spell1: { name: 'Multishot', key: 'Q', manaCost: 50, cooldown: 10, damage: 25, arrows: 3, spread: 0.3, desc: '3 arrows in spread' },
     spell2: { name: 'Poison Arrow', key: 'E', manaCost: 45, cooldown: 15, damage: 10, dotDuration: 4, desc: '10 dmg/s for 4s' },
     passive: { name: "Hawk's Eye", desc: '25% longer range, pierce 1 wall' },
@@ -65,8 +75,12 @@ export const CLASS_DEFS = {
     speed: 80,
     mana: 100,
     manaRegen: 3,
-    melee: { name: 'Staff Whack', damage: 15, range: 2.0, arc: Math.PI * 0.4, cooldown: 1.0 },
-    ranged: { name: 'Magic Missile', damage: 30, manaCost: 20, projectileSpeed: 25, cooldown: 1.0, homing: true },
+    melee: { name: 'Staff Whack', damage: 15, range: 2.0, arc: Math.PI, cooldown: 1.0 },
+    ranged: {
+      name: 'Shadow Bolt', damage: 30, manaCost: 20, projectileSpeed: 25, cooldown: 1.0, homing: true,
+      color: 0x220033, glow: 0xaa44ff, size: 0.125,
+      sfx: 'shadowBolt', shadow: true,
+    },
     spell1: { name: 'Fireball', key: 'Q', manaCost: 55, cooldown: 8, damage: 50, radius: 3, desc: 'AOE 50 dmg in 3m' },
     spell2: { name: 'Blink', key: 'E', manaCost: 35, cooldown: 12, distance: 8, desc: 'Teleport 8m forward' },
     passive: { name: 'Arcane Focus', desc: 'Mana regen +50%' },
@@ -87,15 +101,27 @@ export const CLASS_DEFS = {
     speed: 105,
     mana: 100,
     manaRegen: 2,
-    melee: { name: 'Twin Daggers', damage: 25, range: 1.5, arc: Math.PI * 0.5, cooldown: 0.5 },
-    ranged: { name: 'Throwing Knife', damage: 30, manaCost: 20, projectileSpeed: 45, cooldown: 0.7, hitscan: true },
+    melee: {
+      name: 'Twin Daggers', damage: 25, range: 1.5, arc: Math.PI, cooldown: 0.5,
+      // Quick left-right stab on a single click. Each stab covers the full
+      // frontal 180° arc at half damage — total 25 is the normal melee budget.
+      combo: 2, comboDelay: 0.13, vfxColor: 0x4488ff,
+    },
+    ranged: {
+      name: 'Spirit Daggers', damage: 15, manaCost: 20, projectileSpeed: 45, cooldown: 0.7, hitscan: true,
+      // Fires a pair of small blue spirit daggers back-to-back; 15 dmg each,
+      // 30 total on a full hit — parity with the old single 30-dmg knife.
+      color: 0x4488ff, glow: 0x4488ff, size: 0.06,
+      sfx: 'daggerThrow', dagger: true,
+      multishot: 2, shotDelay: 0.12,
+    },
     spell1: { name: 'Shadowstep', key: 'Q', manaCost: 40, cooldown: 10, distance: 6, invisDuration: 1.0, desc: 'Dash 6m + 1s invis' },
     spell2: { name: 'Smoke Bomb', key: 'E', manaCost: 50, cooldown: 15, radius: 4, duration: 3, desc: 'AOE blind + debuff' },
     passive: { name: 'Backstab', desc: '50% bonus melee from behind' },
     colors: {
-      primary: 0x1a1a22,    // black
-      emissive: 0x0a0a0e,
-      accent: 0xcc2233,     // red accent
+      primary: 0x1a2a44,    // deep blue (matches Spirit Daggers)
+      emissive: 0x081424,
+      accent: 0x4488ff,     // bright blue accent
       skin: 0xeebb99,
     },
     stats: { offense: 4, defense: 1, mobility: 5, utility: 2 },
@@ -133,6 +159,50 @@ export async function loadClassModel(classId) {
     console.warn(`Failed to load model for ${classId}, using primitives:`, e);
     return buildClassModel(classId);
   }
+}
+
+// Independent clone of a class GLB with its own mixer — safe to place multiple
+// copies of the same class in the scene (NPCs sharing the same GLB).
+export async function cloneClassModel(classId) {
+  const def = CLASS_DEFS[classId];
+  if (!def?.modelUrl) return null;
+  // Ensure the base model is loaded + cached; we won't reuse its userData though
+  // (actions reference the base mixer — can't share).
+  await loadCharacterModel(def.modelUrl, def.animUrls || def.animUrl);
+  // Re-resolve raw cached clips/scene via a fresh call so we can skeleton-clone safely.
+  const base = await loadCharacterModel(def.modelUrl, def.animUrls || def.animUrl);
+
+  // Three.js Object3D.clone deep-clones userData via JSON.parse(JSON.stringify()).
+  // Our base model has userData.mixer (circular — mixer refs the model), which
+  // trips that clone path. Temporarily stash the non-serializable userData,
+  // clone, then restore on the base.
+  const savedUserData = base.userData;
+  base.userData = { classId: savedUserData.classId, yawOffset: savedUserData.yawOffset };
+  let cloned;
+  try {
+    cloned = cloneSkeleton(base);
+  } finally {
+    base.userData = savedUserData;
+  }
+  cloned.userData = {};
+
+  const mixer = new THREE.AnimationMixer(cloned);
+  const actions = {};
+  // Get raw clips from the source actions (clips are shareable — they're just data).
+  for (const [name, baseAction] of Object.entries(base.userData.actions || {})) {
+    const clip = baseAction._clip || baseAction.getClip?.();
+    if (clip) actions[name] = mixer.clipAction(clip);
+  }
+
+  cloned.userData.isLoadedModel = true;
+  cloned.userData.mixer = mixer;
+  cloned.userData.actions = actions;
+  cloned.userData.currentAction = null;
+  cloned.userData.classId = classId;
+  cloned.userData.yawOffset = base.userData.yawOffset ?? Math.PI;
+
+  playAnimation(cloned, 'idle');
+  return cloned;
 }
 
 function makeMat(color, emissive, opts = {}) {
@@ -471,16 +541,21 @@ function buildRogue() {
   group.userData.legL = legL;
   group.userData.legR = legR;
 
-  // Twin daggers
-  const bladeMat = makeMat(0xaaaacc, 0x222244, { metalness: 0.9, roughness: 0.2 });
-  const daggerL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.35, 0.02), bladeMat);
-  daggerL.position.set(-0.32, 0.3, -0.2);
+  // Twin short spirit daggers — glowing blue to match Phantom's spell.
+  const bladeMat = makeMat(0xaaddff, 0x4488ff, {
+    metalness: 0.7, roughness: 0.25,
+    emissiveIntensity: 1.4,
+  });
+  const daggerL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.02), bladeMat);
+  daggerL.position.set(-0.32, 0.28, -0.18);
   daggerL.castShadow = true;
   group.add(daggerL);
-  const daggerR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.35, 0.02), bladeMat);
-  daggerR.position.set(0.32, 0.3, -0.2);
+  const daggerR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.02), bladeMat);
+  daggerR.position.set(0.32, 0.28, -0.18);
   daggerR.castShadow = true;
   group.add(daggerR);
+  group.userData.daggerL = daggerL;
+  group.userData.daggerR = daggerR;
   group.userData.weapon = daggerR;
 
   group.userData.classId = 'rogue';

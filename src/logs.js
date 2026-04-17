@@ -43,10 +43,10 @@ const DEFAULT_LOGS = [
   {
     category: 'Classes (4/4) — each has 1 spell, 1 melee, 1 passive',
     items: [
-      { item: 'Tank — Shield Bash (spell) / Greatsword (melee) / Heavy Plate (passive)',        status: 'done', progress: 100, note: 'Frontline bruiser: highest HP, slowest, -20% damage taken.' },
-      { item: 'Ranger — Bow Shot (spell) / Dagger (melee) / Hawk\'s Eye (passive)',             status: 'done', progress: 100, note: 'Mid-range DPS: fast projectile, +25% range.' },
-      { item: 'Eso — Magic Missile (spell) / Staff Whack (melee) / Arcane Focus (passive)',     status: 'done', progress: 100, note: 'Glass-cannon caster: homing projectile, +50% mana regen.' },
-      { item: 'Phantom — Throwing Knife (spell) / Twin Daggers (melee) / Backstab (passive)',   status: 'done', progress: 100, note: 'Fast assassin: hitscan projectile, +50% melee from behind.' },
+      { item: 'Tank — Fireball (spell, AOE) / Sword (melee) / Heavy Plate (passive)',             status: 'done', progress: 100, note: 'Frontline bruiser: highest HP, slowest, -20% damage taken. Fireball does 28 dmg with 2.5m splash.' },
+      { item: 'Ranger — Bow Shot (spell, magic green arrow) / Dagger (melee) / Hawk\'s Eye (passive)', status: 'done', progress: 100, note: 'Mid-range DPS: fast projectile, +25% range.' },
+      { item: 'Eso — Shadow Bolt (spell, dark magic) / Staff Whack (melee) / Arcane Focus (passive)', status: 'done', progress: 100, note: 'Glass-cannon caster: black + purple bolt with swirling aura, homing, +50% mana regen.' },
+      { item: 'Phantom — Spirit Daggers (spell, double-throw) / Twin Daggers (melee) / Backstab (passive)', status: 'done', progress: 100, note: 'Fast assassin: fires two small blue daggers 120 ms apart, 15 dmg each. Silent-but-deadly SFX, +50% melee from behind.' },
       { item: 'Class balance pass', status: 'not-started', progress: 0, note: 'Needs playtesting once maps and objectives exist.' },
     ],
   },

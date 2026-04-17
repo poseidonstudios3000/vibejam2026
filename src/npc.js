@@ -1,9 +1,27 @@
 import * as THREE from 'three';
-import { buildClassModel, CLASS_DEFS } from './classes.js';
-import { getBlockers, pickRandomSpawn, getGroundMesh } from './world.js';
+import { buildClassModel, CLASS_DEFS, cloneClassModel } from './classes.js';
+import { getBlockers, pickRandomSpawn, getSpawnPoints, getGroundMesh } from './world.js';
 import { sfx } from './audio.js';
+import { playAnimation, updateModelAnimation } from './modelLoader.js';
+import {
+  buildFlameProjectileVisual, buildMagicArrowVisual, buildShadowBoltVisual,
+  buildSpiritDaggerVisual,
+  spawnFireEmber, spawnShadowWisp,
+  getBlueGlowTexture,
+} from './player.js';
 
 const npcRaycaster = new THREE.Raycaster();
+
+// Per-sfx throttle so a cluster of same-class NPCs firing on the same frame
+// doesn't stack that audio to painful levels. 70 ms matches the engine feel.
+const _npcSfxLastPlayed = new Map();
+function throttleNPCSfx(name, minMs = 70) {
+  const now = performance.now();
+  const last = _npcSfxLastPlayed.get(name) || 0;
+  if (now - last < minMs) return true;
+  _npcSfxLastPlayed.set(name, now);
+  return false;
+}
 
 // Shared muzzle-flash light pool for all NPCs
 const NPC_MUZZLE_POOL_SIZE = 10;
@@ -113,14 +131,28 @@ const STATIC_CHANCE = {
   sandbox: 0.0,
 };
 
+// Build a class list of length `n` with every class represented as evenly as
+// possible, then shuffled — guarantees all 4 classes appear whenever n ≥ 4,
+// while still keeping the order unpredictable.
+function balancedShuffledClasses(n) {
+  const list = [];
+  for (let i = 0; i < n; i++) list.push(NPC_CLASSES[i % NPC_CLASSES.length]);
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
 export function initNPCs(scene, mapName = 'range') {
   sceneRef = scene;
   currentMapName = mapName;
   const spawns = SPAWNS_BY_MAP[mapName] || SPAWNS_SANDBOX;
   const staticP = STATIC_CHANCE[mapName] ?? 0.0;
+  const classList = balancedShuffledClasses(spawns.length);
   for (let i = 0; i < spawns.length; i++) {
     const s = spawns[i];
-    const classId = NPC_CLASSES[Math.floor(Math.random() * NPC_CLASSES.length)];
+    const classId = classList[i];
     const isStatic = Math.random() < staticP;
     spawnNPC(s.x, s.z, classId, isStatic);
   }
@@ -140,7 +172,9 @@ function spawnNPC(x, z, npcClassId, isStatic = false) {
   // Class-driven stats
   const maxHp = classDef.hp;
   const speed = (classDef.speed / 100) * 2.0; // base wander speed scaled by class
-  const shootRange = npcClassId === 'knight' ? 12 : npcClassId === 'rogue' ? 18 : 28;
+  // Knight was melee-only historically (range 12) but now has Fireball as its
+  // spell — give it real ranged reach so Tank NPCs actually fire at the player.
+  const shootRange = npcClassId === 'knight' ? 25 : npcClassId === 'rogue' ? 20 : 28;
   const shootCdMin = classDef.ranged.cooldown * 1.5;
   const shootCdMax = classDef.ranged.cooldown * 3.0;
   const meleeCd = classDef.melee.cooldown * 1.2;
@@ -176,7 +210,33 @@ function spawnNPC(x, z, npcClassId, isStatic = false) {
   pickNewTarget(npc);
   drawHealthBar(npc);
   npcs.push(npc);
+
+  // If the class has a GLB model, async-load and swap it in — matches what the
+  // player gets. Primitives stay as fallback until the GLB is ready (or if it fails).
+  tryUpgradeNPCModel(npc);
+
   return npc;
+}
+
+function tryUpgradeNPCModel(npc) {
+  if (!CLASS_DEFS[npc.classId]?.modelUrl) return;
+  cloneClassModel(npc.classId).then((loaded) => {
+    if (!loaded || npc.dead) return;
+    const oldMesh = npc.mesh;
+    const pos = oldMesh.position.clone();
+    const rot = oldMesh.rotation.y;
+    sceneRef.remove(oldMesh);
+    loaded.position.copy(pos);
+    loaded.rotation.y = rot;
+    if (npc.hpSprite) {
+      npc.hpSprite.parent?.remove(npc.hpSprite);
+      loaded.add(npc.hpSprite);
+    }
+    sceneRef.add(loaded);
+    npc.mesh = loaded;
+  }).catch((err) => {
+    console.warn(`NPC model upgrade failed for ${npc.classId}:`, err?.message || String(err));
+  });
 }
 
 function pickNewTarget(npc) {
@@ -232,7 +292,7 @@ export function updateNPCs(dt, playerPos) {
     if (npc.dead) {
       npc.deathTimer += dt;
       if (npc.deathTimer >= RESPAWN_DELAY) {
-        respawnNPC(npc);
+        respawnNPC(npc, playerPos);
         continue;
       }
       const fall = Math.min(1, npc.deathTimer * 3);
@@ -257,7 +317,7 @@ export function updateNPCs(dt, playerPos) {
       const tx = currentTarget.pos.x - npc.mesh.position.x;
       const tz = currentTarget.pos.z - npc.mesh.position.z;
       targetDist = Math.sqrt(tx * tx + tz * tz);
-      npc.mesh.rotation.y = Math.atan2(-tx, -tz);
+      npc.mesh.rotation.y = Math.atan2(-tx, -tz) + (npc.mesh.userData.yawOffset || 0);
     }
 
     // --- Combat: decide melee vs ranged ---
@@ -270,8 +330,18 @@ export function updateNPCs(dt, playerPos) {
         npc.meleeSwingTimer = 0.2;
         npc.shootCooldown = 0.5; // brief delay before next action
       } else if (targetDist <= npc.shootRange) {
-        // Ranged attack
+        // Ranged attack — includes multishot (e.g. Phantom throws two daggers).
         fireNPCProjectile(npc, currentTarget.pos);
+        const rangedDef = npc.classDef.ranged;
+        const shots = Math.max(1, rangedDef.multishot ?? 1);
+        const delayMs = (rangedDef.shotDelay ?? 0.1) * 1000;
+        const capturedTarget = currentTarget.pos.clone();
+        for (let s = 1; s < shots; s++) {
+          setTimeout(() => {
+            if (!sceneRef || npc.dead) return;
+            fireNPCProjectile(npc, capturedTarget);
+          }, delayMs * s);
+        }
         npc.shootCooldown = npc.shootCdMin + Math.random() * (npc.shootCdMax - npc.shootCdMin);
       } else {
         npc.shootCooldown = 0.4;
@@ -293,7 +363,7 @@ export function updateNPCs(dt, playerPos) {
       if (!currentTarget) {
         // Idle-face their original orientation (toward map center).
         const fdx = -npc.originX, fdz = -npc.originZ;
-        if (fdx * fdx + fdz * fdz > 0.01) npc.mesh.rotation.y = Math.atan2(-fdx, -fdz);
+        if (fdx * fdx + fdz * fdz > 0.01) npc.mesh.rotation.y = Math.atan2(-fdx, -fdz) + (npc.mesh.userData.yawOffset || 0);
       }
       continue;
     }
@@ -344,7 +414,7 @@ export function updateNPCs(dt, playerPos) {
       npc.mesh.position.y = surfaceY + 0.5;
 
       if (!currentTarget) {
-        npc.mesh.rotation.y = Math.atan2(-dx, -dz);
+        npc.mesh.rotation.y = Math.atan2(-dx, -dz) + (npc.mesh.userData.yawOffset || 0);
       }
 
       // Walk animation
@@ -365,6 +435,23 @@ export function updateNPCs(dt, playerPos) {
       const { armL, armR } = npc.mesh.userData;
       if (armR) armR.rotation.x = -2.0 * k;
       if (armL) armL.rotation.x = -1.0 * k;
+    }
+
+    // GLB-backed NPC: advance the mixer and pick walk vs idle based on motion.
+    if (npc.mesh.userData.isLoadedModel) {
+      const moving = !npc.static && !(
+        Math.abs(npc.targetX - npc.mesh.position.x) < ARRIVE_DIST &&
+        Math.abs(npc.targetZ - npc.mesh.position.z) < ARRIVE_DIST
+      );
+      const desiredAnim = moving ? 'walk' : 'idle';
+      const actions = npc.mesh.userData.actions;
+      if (actions) {
+        const wanted = actions[desiredAnim];
+        if (wanted && npc.mesh.userData.currentAction !== wanted) {
+          playAnimation(npc.mesh, desiredAnim);
+        }
+      }
+      updateModelAnimation(npc.mesh, dt);
     }
 
     // Mage orb bob
@@ -451,29 +538,91 @@ function fireNPCProjectile(npc, targetPos) {
   const size = npc.classId === 'mage' ? 0.28 : npc.classId === 'knight' ? 0.3 : 0.18;
 
   spawnNPCMuzzleFlash(muzzle, colors.outer);
-  sfx.npcShot();
+  // Play the class's signature SFX so NPC spells sound distinct per class
+  // (Tank → fireball, Ranger → rifle, Eso → shadowBolt, Phantom → daggerThrow).
+  // Throttle per-sfx so a cluster of same-class NPCs doesn't pile up the audio.
+  const sfxName = ranged.sfx;
+  if (sfxName && typeof sfx[sfxName] === 'function' && !throttleNPCSfx(sfxName)) {
+    sfx[sfxName]();
+  } else if (!sfxName) {
+    sfx.npcShot();
+  }
 
-  // Visual projectile
-  const outer = new THREE.Mesh(
-    new THREE.SphereGeometry(size, 12, 8),
-    new THREE.MeshBasicMaterial({ color: colors.outer }),
-  );
-  outer.position.copy(muzzle);
-  const core = new THREE.Mesh(
-    new THREE.SphereGeometry(size * 0.6, 10, 6),
-    new THREE.MeshBasicMaterial({ color: colors.inner }),
-  );
-  outer.add(core);
-  sceneRef.add(outer);
+  let mesh;
+  const isFlame = ranged.flame === true;
+  const isArrow = ranged.arrow === true;
+  const isShadow = ranged.shadow === true;
+  const isDagger = ranged.dagger === true;
+  if (isFlame) {
+    mesh = buildFlameProjectileVisual(ranged.size ?? size);
+    mesh.position.copy(muzzle);
+    sceneRef.add(mesh);
+  } else if (isShadow) {
+    mesh = buildShadowBoltVisual(ranged.size ?? size, ranged.color ?? colors.outer, ranged.glow ?? colors.inner);
+    mesh.position.copy(muzzle);
+    sceneRef.add(mesh);
+  } else if (isArrow) {
+    mesh = buildMagicArrowVisual(ranged.size ?? size, ranged.color ?? colors.outer, ranged.glow ?? colors.inner);
+    mesh.position.copy(muzzle);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().normalize());
+    sceneRef.add(mesh);
+  } else if (isDagger) {
+    mesh = buildSpiritDaggerVisual(ranged.size ?? size, ranged.color ?? colors.outer, ranged.glow ?? colors.inner);
+    mesh.position.copy(muzzle);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().normalize());
+    sceneRef.add(mesh);
+  } else {
+    const outer = new THREE.Mesh(
+      new THREE.SphereGeometry(size, 12, 8),
+      new THREE.MeshBasicMaterial({ color: colors.outer }),
+    );
+    outer.position.copy(muzzle);
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(size * 0.6, 10, 6),
+      new THREE.MeshBasicMaterial({ color: colors.inner }),
+    );
+    outer.add(core);
+    sceneRef.add(outer);
+    mesh = outer;
+  }
 
   npcProjectiles.push({
-    mesh: outer, dir, speed,
+    mesh, dir, speed,
     life: 2.5, damage,
     shooter: npc,
+    flame: isFlame, arrow: isArrow, shadow: isShadow, dagger: isDagger,
+    trailColor: ranged.glow ?? colors.inner,
+    emberT: 0,
   });
 }
 
-function respawnNPC(npc) {
+// Pick a spawn point at least `playerMin` m from the player and `npcMin` m
+// from every other living NPC. Falls back to the least-crowded spawn if none
+// clears both thresholds.
+function pickSafeNPCSpawn(mapName, playerPos, playerMin = 8, npcMin = 4) {
+  const spawns = getSpawnPoints(mapName);
+  const alive = npcs.filter((n) => !n.dead);
+  const scored = spawns.map((sp) => {
+    const pdx = playerPos ? playerPos.x - sp.x : Infinity;
+    const pdz = playerPos ? playerPos.z - sp.z : Infinity;
+    const playerD = playerPos ? Math.sqrt(pdx * pdx + pdz * pdz) : Infinity;
+    let npcD = Infinity;
+    for (const n of alive) {
+      const dx = n.mesh.position.x - sp.x;
+      const dz = n.mesh.position.z - sp.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < npcD) npcD = d;
+    }
+    const ok = playerD >= playerMin && npcD >= npcMin;
+    return { sp, playerD, npcD, ok, score: Math.min(playerD, npcD * 1.5) };
+  });
+  const safe = scored.filter((s) => s.ok);
+  if (safe.length > 0) return safe[Math.floor(Math.random() * safe.length)].sp;
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].sp;
+}
+
+function respawnNPC(npc, playerPos) {
   // Pick a new random class on respawn
   const newClassId = NPC_CLASSES[Math.floor(Math.random() * NPC_CLASSES.length)];
   const newClassDef = CLASS_DEFS[newClassId];
@@ -482,7 +631,7 @@ function respawnNPC(npc) {
   const oldPos = npc.mesh.position.clone();
   sceneRef.remove(npc.mesh);
 
-  const sp = pickRandomSpawn(currentMapName);
+  const sp = pickSafeNPCSpawn(currentMapName, playerPos);
   const group = buildClassModel(newClassId);
   group.position.set(sp.x, 0.5, sp.z);
   group.rotation.y = Math.random() * Math.PI * 2;
@@ -501,7 +650,7 @@ function respawnNPC(npc) {
   npc.maxHp = newClassDef.hp;
   npc.hp = npc.maxHp;
   npc.speed = (newClassDef.speed / 100) * 2.0;
-  npc.shootRange = newClassId === 'knight' ? 12 : newClassId === 'rogue' ? 18 : 28;
+  npc.shootRange = newClassId === 'knight' ? 25 : newClassId === 'rogue' ? 20 : 28;
   npc.shootCdMin = newClassDef.ranged.cooldown * 1.5;
   npc.shootCdMax = newClassDef.ranged.cooldown * 3.0;
   npc.meleeCd = newClassDef.melee.cooldown * 1.2;
@@ -523,6 +672,8 @@ function respawnNPC(npc) {
   npc.hpVisibleUntil = 0;
   drawHealthBar(npc);
   pickNewTarget(npc);
+  // Re-upgrade to GLB on respawn (new class could have a GLB available).
+  tryUpgradeNPCModel(npc);
 }
 
 function pickTarget(shooter, playerPos) {
@@ -603,6 +754,52 @@ function updateNPCProjectiles(dt, playerPos) {
 
     if (!blockerHit) p.mesh.position.copy(next);
 
+    // Flame upkeep — flicker sprite rotations + drop embers on a cadence.
+    if (p.flame) {
+      const parts = p.mesh.userData._flameParts;
+      if (parts) {
+        parts.sprMat.rotation += dt * 4.0;
+        parts.sprMat2.rotation -= dt * 3.2;
+        const pulse = 1 + Math.sin(performance.now() * 0.025) * 0.08;
+        p.mesh.scale.setScalar(pulse);
+      }
+      p.emberT += dt;
+      if (p.emberT > 0.04) { p.emberT = 0; spawnFireEmber(p.mesh.position); }
+    }
+    if (p.arrow) {
+      const parts = p.mesh.userData._arrowParts;
+      if (parts) {
+        const pulse = 0.9 + Math.sin(performance.now() * 0.02) * 0.1;
+        parts.auraMat.opacity = 0.75 * pulse;
+      }
+      p.emberT += dt;
+      if (p.emberT > 0.05) { p.emberT = 0; spawnFireEmber(p.mesh.position, p.trailColor); }
+    }
+    if (p.shadow) {
+      const parts = p.mesh.userData._shadowParts;
+      if (parts) {
+        parts.aura1Mat.rotation += dt * 2.0;
+        parts.aura2Mat.rotation -= dt * 1.5;
+        const pulse = 1 + Math.sin(performance.now() * 0.018) * 0.1;
+        p.mesh.scale.setScalar(pulse);
+      }
+      p.emberT += dt;
+      if (p.emberT > 0.06) { p.emberT = 0; spawnShadowWisp(p.mesh.position, p.trailColor); }
+    }
+    if (p.dagger) {
+      const parts = p.mesh.userData._daggerParts;
+      if (parts) {
+        p.mesh.rotateZ(dt * 14);
+        const pulse = 0.5 + Math.sin(performance.now() * 0.035) * 0.1;
+        parts.auraMat.opacity = pulse;
+      }
+      p.emberT += dt;
+      if (p.emberT > 0.05) {
+        p.emberT = 0;
+        spawnFireEmber(p.mesh.position, p.trailColor, getBlueGlowTexture());
+      }
+    }
+
     let targetHit = false;
     if (!blockerHit) {
       const r2 = NPC_PROJECTILE_HIT_RADIUS * NPC_PROJECTILE_HIT_RADIUS;
@@ -632,9 +829,11 @@ function updateNPCProjectiles(dt, playerPos) {
 
     if (blockerHit || targetHit || p.life <= 0) {
       sceneRef.remove(p.mesh);
-      p.mesh.geometry.dispose();
-      p.mesh.material.dispose();
-      p.mesh.children.forEach((c) => { c.geometry.dispose(); c.material.dispose(); });
+      // Handles both plain Meshes and the flame Group uniformly.
+      p.mesh.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
       npcProjectiles.splice(i, 1);
     }
   }
