@@ -245,4 +245,54 @@ export const sfx = {
     osc.connect(gain); gain.connect(masterGain);
     osc.start(c.currentTime); osc.stop(c.currentTime + 0.5);
   },
+
+  rifle() {
+    // Tight, metallic snap — bright tick + fast-decay high-freq body
+    const c = getCtx();
+    playNoise(0.03, 0.22, 'highpass', 4500);
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1600, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(420, c.currentTime + 0.04);
+    gain.gain.setValueAtTime(0.22, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.07);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.07);
+    // subtle metallic ring tail
+    const ring = c.createOscillator();
+    const rg = c.createGain();
+    ring.type = 'sine';
+    ring.frequency.setValueAtTime(2400, c.currentTime);
+    rg.gain.setValueAtTime(0.05, c.currentTime);
+    rg.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.18);
+    ring.connect(rg); rg.connect(masterGain);
+    ring.start(c.currentTime); ring.stop(c.currentTime + 0.2);
+  },
+
+  cannon() {
+    // Deep, heavy boom — sub-bass thump + body + crackle
+    const c = getCtx();
+    playNoise(0.35, 0.45, 'lowpass', 260);
+    playNoise(0.12, 0.18, 'bandpass', 900);
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(95, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(35, c.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.5, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.45);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(c.currentTime); osc.stop(c.currentTime + 0.45);
+    // Mid-body growl
+    const body = c.createOscillator();
+    const bg = c.createGain();
+    body.type = 'sawtooth';
+    body.frequency.setValueAtTime(180, c.currentTime);
+    body.frequency.exponentialRampToValueAtTime(60, c.currentTime + 0.25);
+    bg.gain.setValueAtTime(0.22, c.currentTime);
+    bg.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.3);
+    body.connect(bg); bg.connect(masterGain);
+    body.start(c.currentTime); body.stop(c.currentTime + 0.3);
+  },
 };

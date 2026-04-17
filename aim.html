@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIM CALIBRATION — Parkour Park</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; }
+
+    /* Nav tabs */
+    #nav-tabs {
+      position: fixed; top: 0; left: 0;
+      display: flex; gap: 0; z-index: 200; pointer-events: auto;
+    }
+    #nav-tabs a {
+      font-family: 'Courier New', monospace; font-size: 12px; letter-spacing: 2px;
+      text-transform: uppercase; text-decoration: none; padding: 8px 20px;
+      background: rgba(0,0,0,0.6); color: #777; border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    #nav-tabs a:hover { color: #ccc; }
+    #nav-tabs a.active { color: #ff8833; background: rgba(0,0,0,0.8); border-bottom-color: #ff8833; }
+
+    #hud {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 10;
+      font-family: 'Courier New', monospace; color: #ff8833;
+    }
+
+    #label {
+      position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+      font-size: 13px; letter-spacing: 3px; text-transform: uppercase; opacity: 0.7;
+    }
+
+    /* Crosshair — JS swaps a data-type attribute 1..4 to switch style */
+    #crosshair {
+      position: absolute; top: 50%; left: 50%;
+      width: 22px; height: 22px; transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    #crosshair svg { display: block; }
+
+    /* Scope overlay — shown while body[data-zoom="1"] (driven by player.js) */
+    #scope {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0;
+      transition: opacity 120ms ease-out;
+      background:
+        radial-gradient(circle at center, transparent 0%, transparent 28%, rgba(0,0,0,0.75) 30%, rgba(0,0,0,0.95) 100%);
+    }
+    body[data-zoom="1"] #scope { opacity: 1; }
+    #scope::before, #scope::after {
+      content: ''; position: absolute; background: rgba(0,0,0,0.8);
+    }
+    #scope::before { left: 50%; top: 0; width: 1px; height: 100%; }
+    #scope::after  { top: 50%; left: 0; width: 100%; height: 1px; }
+
+    #click-prompt {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -55%);
+      font-size: 18px; color: #fff; opacity: 0.85; text-align: center;
+      margin-top: 30px; letter-spacing: 2px; font-family: 'Courier New', monospace;
+    }
+
+    #hints {
+      position: absolute; bottom: 14px; left: 14px;
+      font-size: 12px; color: #888; line-height: 1.7;
+    }
+    #hints span { color: #ff8833; font-weight: bold; }
+
+    #telemetry {
+      position: absolute; top: 40px; left: 8px;
+      font-size: 12px; line-height: 1.7; opacity: 0.95;
+      background: rgba(0,0,0,0.65); padding: 10px 14px; border-radius: 6px;
+      border: 1px solid rgba(255,136,51,0.18); color: #ffcc88;
+      min-width: 220px;
+    }
+    #telemetry .row { display: flex; justify-content: space-between; }
+    #telemetry .row .v { color: #fff; font-weight: bold; }
+
+    /* Weapon rail (bottom-center) */
+    #weapon-rail {
+      position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; pointer-events: auto;
+    }
+    .weapon-slot {
+      width: 72px; padding: 6px 8px; border-radius: 6px;
+      background: rgba(0,0,0,0.65);
+      border: 1px solid rgba(255,136,51,0.2);
+      color: #ffcc88; font-family: 'Courier New', monospace;
+      font-size: 10px; text-align: center; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 1px; transition: all 0.15s;
+    }
+    .weapon-slot .key { display:block; font-size: 14px; font-weight: bold; color: #ff8833; }
+    .weapon-slot:hover { border-color: rgba(255,136,51,0.5); color: #fff; }
+    .weapon-slot.active {
+      background: rgba(255,136,51,0.18); color: #fff;
+      border-color: #ff8833; box-shadow: 0 0 12px rgba(255,136,51,0.4);
+    }
+
+    /* Tuning panel */
+    #tune-panel {
+      position: absolute; top: 32px; right: 8px;
+      background: rgba(12, 6, 0, 0.88);
+      border: 1px solid rgba(255, 136, 51, 0.2);
+      border-radius: 6px; padding: 12px 14px;
+      pointer-events: auto; width: 270px;
+      max-height: 92vh; overflow-y: auto;
+    }
+    #tune-panel h3 { font-size: 11px; color: #ff8833; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 2px; }
+    #tune-panel h4 { font-size: 10px; color: #cc6622; margin: 10px 0 4px; text-transform: uppercase; letter-spacing: 1px; border-top: 1px solid rgba(255,136,51,0.12); padding-top: 6px; }
+    .tune-row { margin-bottom: 6px; }
+    .tune-row label { display: flex; justify-content: space-between; font-size: 10px; color: #ffb88a; margin-bottom: 2px; }
+    .tune-row label .val { color: #ff8833; font-weight: bold; }
+    .tune-row input[type="range"] { width: 100%; height: 3px; -webkit-appearance: none; appearance: none; background: rgba(255,136,51,0.15); border-radius: 2px; outline: none; }
+    .tune-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%; background: #ff8833; cursor: pointer; }
+    .tune-row select { width: 100%; padding: 3px 6px; font-family: 'Courier New', monospace; font-size: 10px; background: rgba(20,10,0,0.9); color: #ff8833; border: 1px solid rgba(255,136,51,0.25); border-radius: 3px; }
+    .tune-row button { width: 100%; padding: 5px; font-family: 'Courier New', monospace; font-size: 10px; background: rgba(255,136,51,0.15); color: #ff8833; border: 1px solid rgba(255,136,51,0.3); border-radius: 3px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+    .tune-row button.alt { background: rgba(255,50,50,0.15); color: #f66; border-color: rgba(255,50,50,0.25); }
+    .tune-row.checkbox { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #ffb88a; }
+    .tune-row.checkbox input { accent-color: #ff8833; }
+
+    /* Pill grid (classes, crosshairs) */
+    .pills { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .pill {
+      padding: 6px 8px; font-family: 'Courier New', monospace; font-size: 10px;
+      background: rgba(255,136,51,0.08); color: #ffb88a;
+      border: 1px solid rgba(255,136,51,0.2); border-radius: 3px;
+      cursor: pointer; text-transform: uppercase; letter-spacing: 1px; text-align: center;
+      transition: all 0.15s;
+    }
+    .pill:hover { color: #fff; border-color: rgba(255,136,51,0.45); }
+    .pill.active { background: rgba(255,136,51,0.25); color: #fff; border-color: #ff8833; }
+  </style>
+</head>
+<body>
+  <div id="nav-tabs">
+    <a href="/">Play</a>
+    <a href="/range.html">Range</a>
+    <a href="/dev.html">Movement</a>
+    <a href="/lab.html">Model Lab</a>
+    <a href="/aim.html" class="active">Aim</a>
+    <a href="/logs.html">Game Logs</a>
+  </div>
+
+  <div id="hud">
+    <div id="label">Aim Calibration Range</div>
+
+    <div id="scope"></div>
+    <div id="crosshair" data-type="1"></div>
+    <div id="click-prompt">Click to aim &nbsp;·&nbsp; LMB fires &nbsp;·&nbsp; RMB zoom</div>
+
+    <div id="telemetry">
+      <div class="row"><span>WEAPON</span><span class="v" id="t-weap">—</span></div>
+      <div class="row"><span>HITS</span><span class="v" id="t-hits">0</span></div>
+      <div class="row"><span>SHOTS</span><span class="v" id="t-shots">0</span></div>
+      <div class="row"><span>ACCURACY</span><span class="v" id="t-acc">—</span></div>
+      <div class="row"><span>AIM DIST</span><span class="v" id="t-aimdist">—</span></div>
+    </div>
+
+    <div id="hints">
+      <span>WASD</span> move &nbsp; <span>MOUSE</span> aim &nbsp; <span>LMB</span> attack &nbsp; <span>RMB</span> zoom &nbsp; <span>1/2</span> or <span>SCROLL</span> melee/weapon &nbsp; <span>R</span> reset
+    </div>
+
+    <!-- Class action rail — 1 = spell (weapon, with RMB zoom), 2 = melee (no zoom) -->
+    <div id="weapon-rail">
+      <div class="weapon-slot active" data-slot="weapon">
+        <span class="key">1</span>
+        <span class="slot-name" id="slot-weapon-name">Spell</span>
+      </div>
+      <div class="weapon-slot" data-slot="melee">
+        <span class="key">2</span>
+        <span class="slot-name" id="slot-melee-name">Melee</span>
+      </div>
+    </div>
+
+    <div id="tune-panel">
+      <h3>Aim &amp; Shoot</h3>
+
+      <h4>Class</h4>
+      <div class="pills" id="class-pills">
+        <div class="pill" data-class="knight">Tank</div>
+        <div class="pill" data-class="archer">Ranger</div>
+        <div class="pill" data-class="mage">Eso</div>
+        <div class="pill" data-class="rogue">Phantom</div>
+      </div>
+
+      <h4>Theme</h4>
+      <div class="pills" id="theme-pills">
+        <div class="pill" data-theme="mystic">Mystic</div>
+        <div class="pill" data-theme="frost">Frost</div>
+        <div class="pill" data-theme="sandstone">Sandstone</div>
+        <div class="pill" data-theme="void">Void</div>
+      </div>
+
+      <h4>Crosshair</h4>
+      <div class="pills" id="crosshair-pills">
+        <div class="pill active" data-xh="1">Plus + Dot</div>
+        <div class="pill" data-xh="2">Dot</div>
+        <div class="pill" data-xh="3">Ring + Dot</div>
+        <div class="pill" data-xh="4">Chevron</div>
+      </div>
+
+      <h4>Aim Mode</h4>
+      <div class="tune-row">
+        <label>Mode <span class="val" id="v-mode">converge</span></label>
+        <select id="s-mode">
+          <option value="converge" selected>Converge (crosshair-accurate)</option>
+          <option value="parallel">Parallel (camera-forward)</option>
+        </select>
+      </div>
+
+      <h4>Muzzle</h4>
+      <div class="tune-row">
+        <label>Forward offset <span class="val" id="v-mfwd">0.50</span></label>
+        <input type="range" id="s-mfwd" min="0" max="2" step="0.05" value="0.50">
+      </div>
+      <div class="tune-row">
+        <label>Up offset <span class="val" id="v-mup">0.60</span></label>
+        <input type="range" id="s-mup" min="0" max="2" step="0.05" value="0.60">
+      </div>
+
+      <h4>Projectile (× base)</h4>
+      <div class="tune-row">
+        <label>Speed ×<span class="val" id="v-spd">1.00</span></label>
+        <input type="range" id="s-spd" min="0.25" max="4" step="0.05" value="1.00">
+      </div>
+      <div class="tune-row">
+        <label>Size ×<span class="val" id="v-sz">1.00</span></label>
+        <input type="range" id="s-sz" min="0.25" max="4" step="0.05" value="1.00">
+      </div>
+      <div class="tune-row">
+        <label>Range ×<span class="val" id="v-rng">1.00</span></label>
+        <input type="range" id="s-rng" min="0.25" max="4" step="0.05" value="1.00">
+      </div>
+
+      <h4>Zoom</h4>
+      <div class="tune-row">
+        <label>Scope FOV <span class="val" id="v-zfov">28</span></label>
+        <input type="range" id="s-zfov" min="10" max="50" step="1" value="28">
+      </div>
+      <div class="tune-row">
+        <label>Scope sens × <span class="val" id="v-zsens">0.50</span></label>
+        <input type="range" id="s-zsens" min="0.1" max="1" step="0.05" value="0.5">
+      </div>
+
+      <h4>Camera</h4>
+      <div class="tune-row">
+        <label>Distance <span class="val" id="v-cdist">6.0</span></label>
+        <input type="range" id="s-cdist" min="0" max="14" step="0.5" value="6">
+      </div>
+      <div class="tune-row">
+        <label>Height <span class="val" id="v-cheight">3.0</span></label>
+        <input type="range" id="s-cheight" min="1" max="8" step="0.5" value="3">
+      </div>
+
+      <h4>Debug</h4>
+      <div class="tune-row checkbox">
+        <label>Show aim ray</label>
+        <input type="checkbox" id="s-debug-ray" checked>
+      </div>
+      <div class="tune-row checkbox">
+        <label>Show muzzle marker</label>
+        <input type="checkbox" id="s-debug-muz" checked>
+      </div>
+
+      <h4>Actions</h4>
+      <div class="tune-row"><button id="btn-reset-targets">Reset Targets</button></div>
+      <div class="tune-row"><button id="btn-reset-tuning" class="alt">Reset Defaults</button></div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/aim.js"></script>
+</body>
+</html>

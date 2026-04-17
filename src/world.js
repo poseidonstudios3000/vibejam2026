@@ -23,15 +23,10 @@ export function getGroundMesh() {
 
 // Shared spawn-point pool per map — both player and NPC respawns pull from here
 const SPAWN_POINTS = {
-  map1: [
-    { x: -30, z: -30 }, { x: 30, z: -30 }, { x: 30, z: 30 },  { x: -30, z: 30 },
-    { x:  -8, z:  32 }, { x:  8, z: -32 }, { x: 32, z:   0 }, { x: -32, z:  0 },
-    { x:   0, z:  -8 }, { x:   0, z:   8 },
-  ],
-  map2: [
-    { x: -40, z: -40 }, { x: 40, z: -40 }, { x: 40, z: 40 }, { x: -40, z: 40 },
-    { x:   0, z: -42 }, { x:   0, z: 42 }, { x: -42, z: 0 }, { x: 42, z:  0 },
-    { x: -20, z: -20 }, { x: 20, z: 20 },
+  range: [
+    { x: -12, z: -12 }, { x: 12, z: -12 }, { x: -14, z: -28 }, { x: 14, z: -28 },
+    { x:  -6, z: -42 }, { x:  6, z: -42 }, { x: -22, z: -50 }, { x: 22, z: -50 },
+    { x:   0, z: -20 }, { x:   0, z: -36 },
   ],
   sandbox: [
     { x:   0, z:   0 }, { x:  12, z:  10 }, { x: -12, z:  10 },
@@ -39,11 +34,11 @@ const SPAWN_POINTS = {
   ],
 };
 
-export function getSpawnPoints(mapName = 'map1') {
-  return SPAWN_POINTS[mapName] || SPAWN_POINTS.map1;
+export function getSpawnPoints(mapName = 'range') {
+  return SPAWN_POINTS[mapName] || SPAWN_POINTS.range;
 }
 
-export function pickRandomSpawn(mapName = 'map1') {
+export function pickRandomSpawn(mapName = 'range') {
   const pool = getSpawnPoints(mapName);
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -462,6 +457,45 @@ function setupEnvironment(scene) {
   scene.add(ambientLight);
 }
 
+// Lighting-only slice of setupEnvironment — used by the aim calibration page
+// to match the arena's visual palette without pulling in arena geometry.
+// Returns handles so callers can re-theme live.
+export function applyArenaLighting(scene) {
+  const t = themes[settings.colorTheme] || themes.frost;
+  applySkyGradient(scene, t.sky);
+  scene.fog = new THREE.FogExp2(t.fog, t.fogDensity);
+
+  const sun = new THREE.DirectionalLight(t.sunColor, t.sunIntensity);
+  sun.position.set(40, 60, 20);
+  sun.castShadow = true;
+  sun.shadow.mapSize.width = 2048;
+  sun.shadow.mapSize.height = 2048;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 200;
+  sun.shadow.camera.left = -60;
+  sun.shadow.camera.right = 60;
+  sun.shadow.camera.top = 60;
+  sun.shadow.camera.bottom = -60;
+  scene.add(sun);
+
+  const ambient = new THREE.AmbientLight(t.ambient, t.ambientIntensity);
+  scene.add(ambient);
+  return { sun, ambient };
+}
+
+// Swap the palette on a scene previously lit by applyArenaLighting.
+// Caller passes the handles it got back (plus optional ground mesh to tint).
+export function applyArenaTheme(scene, themeName, refs) {
+  const t = themes[themeName];
+  if (!t) return;
+  applySkyGradient(scene, t.sky);
+  if (scene.fog) { scene.fog.color.set(t.fog); scene.fog.density = t.fogDensity; }
+  if (refs?.sun) { refs.sun.color.set(t.sunColor); refs.sun.intensity = t.sunIntensity; }
+  if (refs?.ambient) { refs.ambient.color.set(t.ambient); refs.ambient.intensity = t.ambientIntensity; }
+  if (refs?.ground?.material?.color) refs.ground.material.color.set(t.ground);
+  settings.colorTheme = themeName;
+}
+
 export function createWorld(scene) {
   setupEnvironment(scene);
 
@@ -591,180 +625,6 @@ export function createWorld(scene) {
     createBreakable(scene, -4 + i * 2, 4 + Math.random() * 2, -30, 1.5, 0.4, 1.5, 30);
   }
   createPlatform(scene, 0, 6, -22, 4, 0.4, 4, 0xff4466);
-
-  return { groundMesh, sunLight, movingPlatforms };
-}
-
-// --- Map 1: 76x76 arena with ramps, cover walls, and two elevated platforms ---
-export function createMap1(scene) {
-  setupEnvironment(scene);
-
-  const t = themes[settings.colorTheme] || themes.arcane;
-  createLabel(scene, 'MANA FIGHT', 0, 6, -32);
-
-  // Arena ~76x76 units (1.5x the old 50x50), walls 4.5 units tall
-  const HALF = 38;
-  const WALL_H = 4.5;
-  const WALL_COLOR = t.wallColor;
-  const RAMP_COLOR = t.rampColor;
-  const PLAT_COLOR = t.platColor;
-  const COVER_COLOR = t.coverColor;
-
-  // Perimeter walls
-  createWall(scene, 0, 0,  HALF, HALF * 2, WALL_H, 0.8, WALL_COLOR);
-  createWall(scene, 0, 0, -HALF, HALF * 2, WALL_H, 0.8, WALL_COLOR);
-  createWall(scene,  HALF, 0, 0, 0.8, WALL_H, HALF * 2, WALL_COLOR);
-  createWall(scene, -HALF, 0, 0, 0.8, WALL_H, HALF * 2, WALL_COLOR);
-
-  // Two elevated platforms (left + right) with ramps leading up from the south
-  const PLAT_H = 4;
-  const PLAT_W = 10, PLAT_D = 10, PLAT_T = 0.4;
-  const PLAT_Z = 20;
-  const RAMP_LEN = 14;
-  const RAMP_ANGLE = Math.atan(PLAT_H / RAMP_LEN);
-
-  function buildElevated(px) {
-    // Platform
-    createPlatform(scene, px, PLAT_H + PLAT_T / 2, PLAT_Z, PLAT_W, PLAT_T, PLAT_D, PLAT_COLOR);
-    // Ramp center: halfway between Z=0 (base) and Z=PLAT_Z - PLAT_D/2 (platform edge)
-    const rampZ = PLAT_Z - PLAT_D / 2 - RAMP_LEN / 2;
-    createRamp(scene, px, 0, rampZ, RAMP_LEN, PLAT_H, PLAT_W - 2, 0, RAMP_ANGLE, RAMP_COLOR);
-    // Railings: 3 sides (south side open for ramp entry)
-    const RAIL_H = 1, RAIL_T = 0.2, RAIL_COLOR = 0x886633;
-    createWall(scene, px, PLAT_H, PLAT_Z + PLAT_D / 2, PLAT_W, RAIL_H, RAIL_T, RAIL_COLOR);
-    createWall(scene, px - PLAT_W / 2, PLAT_H, PLAT_Z, RAIL_T, RAIL_H, PLAT_D, RAIL_COLOR);
-    createWall(scene, px + PLAT_W / 2, PLAT_H, PLAT_Z, RAIL_T, RAIL_H, PLAT_D, RAIL_COLOR);
-  }
-  buildElevated(-24);
-  buildElevated( 24);
-
-  // Central low platform (tactical high ground in the middle-south) with a short ramp
-  const MID_H = 1.5;
-  createPlatform(scene, 0, MID_H + 0.15, -22, 8, 0.3, 8, PLAT_COLOR);
-  createRamp(scene, 0, 0, -15, 8, MID_H, 6, 0, Math.atan(MID_H / 8), RAMP_COLOR);
-
-  // Interior cover walls — scattered for gunfight cover
-  createWall(scene, -12, 0, -6, 7, 2, 0.6, COVER_COLOR);
-  createWall(scene,  12, 0, -6, 7, 2, 0.6, COVER_COLOR);
-  createWall(scene,   0, 0,  0, 0.6, 2, 7, COVER_COLOR);
-  createWall(scene, -16, 0,  5, 0.6, 2, 6, COVER_COLOR);
-  createWall(scene,  16, 0,  5, 0.6, 2, 6, COVER_COLOR);
-  createWall(scene,  -8, 0,  14, 6, 2, 0.6, COVER_COLOR);
-  createWall(scene,   8, 0,  14, 6, 2, 0.6, COVER_COLOR);
-
-  return { groundMesh, sunLight, movingPlatforms };
-}
-
-// --- Map 2: The Pool — 100x100, clean symmetric skatepool arena ---
-export function createMap2(scene) {
-  setupEnvironment(scene);
-
-  const t = themes[settings.colorTheme] || themes.sandstone;
-  createLabel(scene, 'THE POOL', 0, 8, -48);
-
-  const HALF = 50;
-  const WALL_H = 6;
-  const W = t.wallColor;
-  const C = t.coverColor;
-  const P = t.platColor;
-  const R = t.rampColor;
-
-  // === PERIMETER ===
-  createWall(scene, 0, 0,  HALF, HALF * 2, WALL_H, 1, W);
-  createWall(scene, 0, 0, -HALF, HALF * 2, WALL_H, 1, W);
-  createWall(scene,  HALF, 0, 0, 1, WALL_H, HALF * 2, W);
-  createWall(scene, -HALF, 0, 0, 1, WALL_H, HALF * 2, W);
-
-  // === CENTER PLATFORM — octagonal elevated island ===
-  // Square platform with 4 ramps, one from each cardinal direction
-  const CTR = 6;
-  const CTR_H = 2;
-  createPlatform(scene, 0, CTR_H, 0, CTR * 2, 0.5, CTR * 2, P);
-  const cAngle = Math.atan(CTR_H / 6);
-  createRamp(scene, 0, 0, -(CTR + 3), 6, CTR_H, 5, Math.PI, cAngle, R);
-  createRamp(scene, 0, 0,  (CTR + 3), 6, CTR_H, 5, 0, cAngle, R);
-  createRamp(scene, -(CTR + 3), 0, 0, 6, CTR_H, 5, -Math.PI / 2, cAngle, R);
-  createRamp(scene,  (CTR + 3), 0, 0, 6, CTR_H, 5, Math.PI / 2, cAngle, R);
-
-  // Low wall ring on top of center platform (cover for defenders)
-  const cw = 0.6, ch = 1.5;
-  createWall(scene, -CTR + 1, CTR_H, 0, cw, ch, CTR, C);
-  createWall(scene,  CTR - 1, CTR_H, 0, cw, ch, CTR, C);
-  createWall(scene, 0, CTR_H, -CTR + 1, CTR, ch, cw, C);
-  createWall(scene, 0, CTR_H,  CTR - 1, CTR, ch, cw, C);
-
-  // === 4 SYMMETRICAL COVER LANES — radiating outward from center ===
-  // Each lane: a pair of parallel walls forming a corridor at distance ~20 from center
-  const LANE_D = 22; // distance from center
-  const LANE_L = 14; // wall length
-  const LANE_H = 2.5;
-  const LANE_GAP = 4; // gap between the parallel walls
-  // North lane (along X axis at z = -LANE_D)
-  createWall(scene, 0, 0, -LANE_D - LANE_GAP / 2, LANE_L, LANE_H, 0.6, C);
-  createWall(scene, 0, 0, -LANE_D + LANE_GAP / 2, LANE_L, LANE_H, 0.6, C);
-  // South lane
-  createWall(scene, 0, 0,  LANE_D - LANE_GAP / 2, LANE_L, LANE_H, 0.6, C);
-  createWall(scene, 0, 0,  LANE_D + LANE_GAP / 2, LANE_L, LANE_H, 0.6, C);
-  // East lane (along Z axis at x = LANE_D)
-  createWall(scene,  LANE_D - LANE_GAP / 2, 0, 0, 0.6, LANE_H, LANE_L, C);
-  createWall(scene,  LANE_D + LANE_GAP / 2, 0, 0, 0.6, LANE_H, LANE_L, C);
-  // West lane
-  createWall(scene, -LANE_D - LANE_GAP / 2, 0, 0, 0.6, LANE_H, LANE_L, C);
-  createWall(scene, -LANE_D + LANE_GAP / 2, 0, 0, 0.6, LANE_H, LANE_L, C);
-
-  // === 4 CORNER BLOCKS — square cover blocks in each diagonal ===
-  const DIAG = 30;
-  const BLK = 5; // block size
-  const BLK_H = 2.5;
-  createWall(scene, -DIAG, 0, -DIAG, BLK, BLK_H, BLK, C);
-  createWall(scene,  DIAG, 0, -DIAG, BLK, BLK_H, BLK, C);
-  createWall(scene, -DIAG, 0,  DIAG, BLK, BLK_H, BLK, C);
-  createWall(scene,  DIAG, 0,  DIAG, BLK, BLK_H, BLK, C);
-
-  // === 4 CORNER PLATFORMS — elevated spots in each corner with ramps ===
-  const CP_D = 42; // corner platform distance
-  const CP_H = 3;
-  const CP_S = 7;
-  const cpAngle = Math.atan(CP_H / 5);
-  // NW
-  createPlatform(scene, -CP_D, CP_H, -CP_D, CP_S, 0.4, CP_S, P);
-  createRamp(scene, -CP_D, 0, -CP_D + CP_S / 2 + 2.5, 5, CP_H, 4, 0, cpAngle, R);
-  // NE
-  createPlatform(scene,  CP_D, CP_H, -CP_D, CP_S, 0.4, CP_S, P);
-  createRamp(scene,  CP_D, 0, -CP_D + CP_S / 2 + 2.5, 5, CP_H, 4, 0, cpAngle, R);
-  // SW
-  createPlatform(scene, -CP_D, CP_H,  CP_D, CP_S, 0.4, CP_S, P);
-  createRamp(scene, -CP_D, 0,  CP_D - CP_S / 2 - 2.5, 5, CP_H, 4, Math.PI, cpAngle, R);
-  // SE
-  createPlatform(scene,  CP_D, CP_H,  CP_D, CP_S, 0.4, CP_S, P);
-  createRamp(scene,  CP_D, 0,  CP_D - CP_S / 2 - 2.5, 5, CP_H, 4, Math.PI, cpAngle, R);
-
-  // === EDGE COVER — short walls along each perimeter side (between corners) ===
-  const EDGE_H = 2;
-  createWall(scene, -20, 0, -46, 10, EDGE_H, 0.6, C);
-  createWall(scene,  20, 0, -46, 10, EDGE_H, 0.6, C);
-  createWall(scene, -20, 0,  46, 10, EDGE_H, 0.6, C);
-  createWall(scene,  20, 0,  46, 10, EDGE_H, 0.6, C);
-  createWall(scene, -46, 0, -20, 0.6, EDGE_H, 10, C);
-  createWall(scene, -46, 0,  20, 0.6, EDGE_H, 10, C);
-  createWall(scene,  46, 0, -20, 0.6, EDGE_H, 10, C);
-  createWall(scene,  46, 0,  20, 0.6, EDGE_H, 10, C);
-
-  // === INNER RING — 4 small T-walls halfway between center and lanes ===
-  const IR = 12;
-  const IR_H = 2;
-  // N
-  createWall(scene, 0, 0, -IR, 6, IR_H, 0.6, C);
-  createWall(scene, 0, 0, -IR - 2, 0.6, IR_H, 4, C);
-  // S
-  createWall(scene, 0, 0,  IR, 6, IR_H, 0.6, C);
-  createWall(scene, 0, 0,  IR + 2, 0.6, IR_H, 4, C);
-  // E
-  createWall(scene,  IR, 0, 0, 0.6, IR_H, 6, C);
-  createWall(scene,  IR + 2, 0, 0, 4, IR_H, 0.6, C);
-  // W
-  createWall(scene, -IR, 0, 0, 0.6, IR_H, 6, C);
-  createWall(scene, -IR - 2, 0, 0, 4, IR_H, 0.6, C);
 
   return { groundMesh, sunLight, movingPlatforms };
 }

@@ -9,7 +9,7 @@ let frames = 0;
 let lastTime = performance.now();
 let currentClassDef = null;
 
-export function initUI(mapName = 'map1', classId = 'knight') {
+export function initUI(mapName = 'range', classId = 'knight') {
   fpsEl = document.getElementById('fps-counter');
   debugEl = document.getElementById('debug-info');
   controlsEl = document.getElementById('controls-hint');
@@ -26,10 +26,12 @@ export function initUI(mapName = 'map1', classId = 'knight') {
   if (currentClassDef) {
     const meleeN = document.getElementById('cd-melee-name');
     const rangedN = document.getElementById('cd-ranged-name');
+    const passiveN = document.getElementById('cd-passive-name');
     const qN = document.getElementById('cd-q-name');
     const eN = document.getElementById('cd-e-name');
     if (meleeN) meleeN.textContent = currentClassDef.melee.name;
     if (rangedN) rangedN.textContent = currentClassDef.ranged.name;
+    if (passiveN) passiveN.textContent = currentClassDef.passive.name;
     if (qN) qN.textContent = currentClassDef.spell1.name;
     if (eN) eN.textContent = currentClassDef.spell2.name;
   }

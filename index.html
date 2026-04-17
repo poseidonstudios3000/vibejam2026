@@ -288,27 +288,14 @@
       display: none;
     }
 
+    /* Shared crosshair with the Aim tab — centered SVG, plus-with-dot. */
     #crosshair {
       position: absolute; top: 50%; left: 50%;
-      width: 20px; height: 20px;
+      width: 22px; height: 22px;
       transform: translate(-50%, -50%);
       pointer-events: none;
     }
-    #crosshair::before, #crosshair::after {
-      content: ''; position: absolute;
-      background: #fff;
-      box-shadow: 0 0 0 1px #000, 0 0 6px rgba(0,0,0,0.8);
-    }
-    #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
-    #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
-    #crosshair-dot {
-      position: absolute; top: 50%; left: 50%;
-      width: 4px; height: 4px;
-      transform: translate(-50%, -50%);
-      background: #ff3344; border-radius: 50%;
-      box-shadow: 0 0 0 1px #000;
-      pointer-events: none;
-    }
+    #crosshair svg { display: block; }
 
     #click-prompt {
       position: absolute; top: 50%; left: 50%;
@@ -393,6 +380,25 @@
       font-size: 14px; color: #fff; font-weight: bold;
     }
 
+    /* Active slot highlight (driven by body[data-slot]) */
+    body[data-slot="melee"]  #cd-melee,
+    body[data-slot="weapon"] #cd-ranged {
+      border-color: #ff8833;
+      box-shadow: 0 0 10px rgba(255,136,51,0.5);
+    }
+
+    /* Scope overlay — shown while body[data-zoom="1"] */
+    #scope {
+      position: fixed; inset: 0; z-index: 11; pointer-events: none;
+      opacity: 0; transition: opacity 120ms ease-out;
+      background:
+        radial-gradient(circle at center, transparent 0%, transparent 28%, rgba(0,0,0,0.75) 30%, rgba(0,0,0,0.95) 100%);
+    }
+    body[data-zoom="1"] #scope { opacity: 1; }
+    #scope::before, #scope::after { content: ''; position: absolute; background: rgba(0,0,0,0.8); }
+    #scope::before { left: 50%; top: 0; width: 1px; height: 100%; }
+    #scope::after  { top: 50%; left: 0; width: 100%; height: 1px; }
+
     /* Theme picker */
     #theme-picker {
       position: absolute; top: 8px; left: 50%;
@@ -470,16 +476,15 @@
 </head>
 <body>
   <div id="nav-tabs">
-    <a href="/?map=map1" data-map="map1">Map 1</a>
-    <a href="/?map=map2" data-map="map2">Map 2</a>
+    <a href="/" data-map="home">Play</a>
+    <a href="/range.html">Range</a>
     <a href="/dev.html">Movement</a>
     <a href="/lab.html">Model Lab</a>
+    <a href="/aim.html">Aim</a>
+    <a href="/logs.html">Game Logs</a>
   </div>
   <script>
-    const currentMap = new URLSearchParams(window.location.search).get('map') || 'map1';
-    document.querySelectorAll('#nav-tabs a[data-map]').forEach(a => {
-      if (a.dataset.map === currentMap) a.classList.add('active');
-    });
+    document.querySelectorAll('#nav-tabs a[data-map="home"]').forEach(a => a.classList.add('active'));
   </script>
 
   <!-- ===== CLASS SELECT ===== -->
@@ -497,10 +502,8 @@
         <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#cc6622;"></div></div></div>
         <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#cc6622;"></div></div></div>
         <div class="class-abilities">
-          <span class="ability-key">LMB</span> <span class="ability-name">Greatsword</span> — 35 dmg<br>
-          <span class="ability-key">RMB</span> <span class="ability-name">Shield Bash</span> — stun<br>
-          <span class="ability-key">Q</span> <span class="ability-name">Fortify</span> — +50 armor<br>
-          <span class="ability-key">E</span> <span class="ability-name">Ground Slam</span> — AOE<br>
+          <span class="ability-key">1</span> <span class="ability-name">Shield Bash</span> — 20 dmg, stun<br>
+          <span class="ability-key">2</span> <span class="ability-name">Greatsword</span> — 35 dmg melee<br>
           <div class="passive-text">Heavy Plate: -20% dmg taken</div>
         </div>
       </div>
@@ -514,10 +517,8 @@
         <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#3d5c3a;"></div></div></div>
         <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:80%;background:#3d5c3a;"></div></div></div>
         <div class="class-abilities">
-          <span class="ability-key">LMB</span> <span class="ability-name">Dagger Stab</span> — 20 dmg<br>
-          <span class="ability-key">RMB</span> <span class="ability-name">Bow Shot</span> — 40 dmg<br>
-          <span class="ability-key">Q</span> <span class="ability-name">Multishot</span> — 3 arrows<br>
-          <span class="ability-key">E</span> <span class="ability-name">Poison Arrow</span> — DoT<br>
+          <span class="ability-key">1</span> <span class="ability-name">Bow Shot</span> — 40 dmg, fast<br>
+          <span class="ability-key">2</span> <span class="ability-name">Dagger</span> — 20 dmg melee<br>
           <div class="passive-text">Hawk's Eye: +25% range</div>
         </div>
       </div>
@@ -531,10 +532,8 @@
         <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#8844cc;"></div></div></div>
         <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:40%;background:#8844cc;"></div></div></div>
         <div class="class-abilities">
-          <span class="ability-key">LMB</span> <span class="ability-name">Staff Whack</span> — 15 dmg<br>
-          <span class="ability-key">RMB</span> <span class="ability-name">Magic Missile</span> — homing<br>
-          <span class="ability-key">Q</span> <span class="ability-name">Fireball</span> — 50 AOE<br>
-          <span class="ability-key">E</span> <span class="ability-name">Blink</span> — teleport<br>
+          <span class="ability-key">1</span> <span class="ability-name">Magic Missile</span> — 30 dmg, homing<br>
+          <span class="ability-key">2</span> <span class="ability-name">Staff Whack</span> — 15 dmg melee<br>
           <div class="passive-text">Arcane Focus: +50% mana regen</div>
         </div>
       </div>
@@ -548,84 +547,14 @@
         <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#cc2233;"></div></div></div>
         <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#cc2233;"></div></div></div>
         <div class="class-abilities">
-          <span class="ability-key">LMB</span> <span class="ability-name">Twin Daggers</span> — fast<br>
-          <span class="ability-key">RMB</span> <span class="ability-name">Throwing Knife</span> — instant<br>
-          <span class="ability-key">Q</span> <span class="ability-name">Shadowstep</span> — dash+invis<br>
-          <span class="ability-key">E</span> <span class="ability-name">Smoke Bomb</span> — blind<br>
+          <span class="ability-key">1</span> <span class="ability-name">Throwing Knife</span> — 30 dmg, hitscan<br>
+          <span class="ability-key">2</span> <span class="ability-name">Twin Daggers</span> — 25 dmg melee<br>
           <div class="passive-text">Backstab: +50% from behind</div>
         </div>
       </div>
     </div>
 
     <button id="play-btn">Fight</button>
-  </div>
-
-  <!-- ===== IN-GAME HUD ===== -->
-  <div id="hud">
-    <div id="fps-counter">60 FPS</div>
-    <img src="/assets/mana-fight-logo.png" alt="MANA FIGHT" style="position:absolute;top:4px;left:50%;transform:translateX(-50%);width:140px;height:auto;opacity:0.75;pointer-events:none;">
-    <div id="theme-picker" style="top:auto;bottom:80px;left:50%;right:auto;transform:translateX(-50%)">
-      <button class="theme-btn" data-theme="mystic">Mystic</button>
-      <button class="theme-btn active" data-theme="frost">Frost</button>
-      <button class="theme-btn" data-theme="sandstone">Sandstone</button>
-      <button class="theme-btn" data-theme="void">Void</button>
-    </div>
-    <div id="kill-counter">Kills: 0</div>
-    <div id="debug-info"></div>
-    <div id="crosshair"></div>
-    <div id="crosshair-dot"></div>
-    <div id="click-prompt">Click to play</div>
-
-    <div id="class-indicator"></div>
-
-    <div id="player-hp" class="resource-bar">
-      <div id="player-hp-fill" class="bar-fill"></div>
-      <div id="player-hp-text" class="bar-text">100 / 100 HP</div>
-    </div>
-    <div id="player-mana" class="resource-bar">
-      <div id="player-mana-fill" class="bar-fill"></div>
-      <div id="player-mana-text" class="bar-text">100 / 100 MP</div>
-    </div>
-    <div id="player-stamina" class="resource-bar">
-      <div id="player-stamina-fill" class="bar-fill"></div>
-      <div id="player-stamina-text" class="bar-text">100 / 100 STA</div>
-    </div>
-
-    <div id="cooldown-bar">
-      <div class="cd-slot" id="cd-melee">
-        <div class="cd-key">LMB</div>
-        <div class="cd-name" id="cd-melee-name">Melee</div>
-      </div>
-      <div class="cd-slot" id="cd-ranged">
-        <div class="cd-key">RMB</div>
-        <div class="cd-name" id="cd-ranged-name">Ranged</div>
-      </div>
-      <div class="cd-slot" id="cd-q">
-        <div class="cd-key">Q</div>
-        <div class="cd-name" id="cd-q-name">Spell 1</div>
-      </div>
-      <div class="cd-slot" id="cd-e">
-        <div class="cd-key">E</div>
-        <div class="cd-name" id="cd-e-name">Spell 2</div>
-      </div>
-    </div>
-
-    <div id="controls-hint">
-      <span>WASD</span> move &nbsp;
-      <span>SHIFT</span> sprint &nbsp;
-      <span>SPACE</span> jump<br>
-      <span>LMB</span> melee &nbsp;
-      <span>RMB</span> ranged &nbsp;
-      <span>Q</span> spell 1 &nbsp;
-      <span>E</span> spell 2 &nbsp;
-      <span>P</span> pause &nbsp;
-      <span>H</span> hide
-    </div>
-
-    <div id="pause-overlay">
-      <div class="pause-title">PAUSED</div>
-      <div class="pause-sub">CLICK OR PRESS <span>P</span> TO RESUME</div>
-    </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

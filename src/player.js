@@ -89,7 +89,94 @@ const HP_REGEN_RATE = 5;
 
 // Combat
 const raycaster = new THREE.Raycaster();
+const aimRaycaster = new THREE.Raycaster();
+const projRaycaster = new THREE.Raycaster();
 const projectiles = [];
+const _aimNDC = new THREE.Vector2(0, 0); // screen-center crosshair
+
+// --- Aim/shoot tuning (live-editable by aim calibration page) ---
+export const aimTuning = {
+  muzzleForward: 0.5,   // how far in front of player the muzzle spawns
+  muzzleUp: 0.6,        // vertical offset from feet
+  aimMode: 'converge',  // 'converge' (crosshair-accurate) | 'parallel' (camera-forward)
+  speedScale: 1.0,      // multiplier on class projectile speed
+  sizeScale: 1.0,       // multiplier on projectile visual size
+  rangeScale: 1.0,      // multiplier on projectile range
+  damageScale: 1.0,     // multiplier on projectile damage
+  maxAimDist: 200,      // how far the aim raycast reaches
+  colorOverride: null,    // number | null — replaces projectile core color when set
+  glowOverride: null,     // number | null — replaces projectile outer glow color when set
+  sfxOverride: null,      // () => void | null — replaces sfx.pistol() on ranged fire
+};
+
+// Extra shootable targets (used by the aim-calibration page).
+// Each mesh may carry userData.onProjectileHit(point, damage).
+const extraShootTargets = [];
+export function registerShootTarget(mesh) { if (!extraShootTargets.includes(mesh)) extraShootTargets.push(mesh); }
+export function unregisterShootTarget(mesh) { const i = extraShootTargets.indexOf(mesh); if (i >= 0) extraShootTargets.splice(i, 1); }
+export function clearShootTargets() { extraShootTargets.length = 0; }
+
+// Debug snapshot of the most recent shot — read by the aim page for viz.
+let lastShotDebug = null;
+export function getLastShotDebug() { return lastShotDebug; }
+export function getActiveProjectiles() { return projectiles; }
+
+// Legacy mouse-button remap hooks — kept for backwards compat. Default slot
+// system below overrides them when `useSlotSystem` is true (the default).
+export const combatButtons = { melee: 0, ranged: 2 };
+export const combatKeys = { melee: null, ranged: null };
+
+// --- MANA FIGHT slot system ---
+// Slot mapping:
+//   1 → 'weapon' (spell attack): LMB fires, RMB zooms (scope / ADS)
+//   2 → 'melee' (melee attack):  LMB swings, RMB does nothing
+// Plus each class's passive is always on. Q/E spells are disabled for now
+// (set `spellsEnabled: true` to re-enable).
+export const combatSlot = {
+  active: 'weapon',       // 'melee' | 'weapon'
+  useSlotSystem: true,
+  spellsEnabled: false,   // gate Q/E
+};
+
+export function setCombatSlot(slot) {
+  if (slot !== 'melee' && slot !== 'weapon') return;
+  combatSlot.active = slot;
+  document.body?.setAttribute('data-slot', slot);
+  window.dispatchEvent(new CustomEvent('mana-slot-changed', { detail: { slot } }));
+}
+
+// --- Zoom / ADS ---
+export const zoomState = {
+  active: false,
+  fov: 28,          // scoped FOV
+  defaultFov: 65,   // restored on un-zoom
+  sensScale: 0.5,   // sensitivity multiplier while zoomed
+};
+
+export function setZoom(on) {
+  if (zoomState.active === on) return;
+  zoomState.active = on;
+  if (document.body) document.body.dataset.zoom = on ? '1' : '0';
+  window.dispatchEvent(new CustomEvent('mana-zoom-changed', { detail: { active: on } }));
+}
+
+// Per-class ranged defaults (projectile glow + fire SFX).
+// `aimTuning.*Override` takes precedence when set (for calibration / weapon presets).
+const CLASS_RANGED_GLOW = {
+  knight: 0xffaa66,
+  archer: 0xccff88,
+  mage:   0xcc88ff,
+  rogue:  0xffffff,
+};
+function classRangedSfx(id) {
+  switch (id) {
+    case 'knight': return () => sfx.cannon();
+    case 'archer': return () => sfx.rifle();
+    case 'mage':   return () => sfx.rocket();
+    case 'rogue':  return () => sfx.pistol();
+    default:       return () => sfx.pistol();
+  }
+}
 
 // Melee
 let meleeCooldownTimer = 0;
@@ -211,14 +298,45 @@ export function createPlayer(scene, selectedClass = 'knight') {
 
   window.addEventListener('mousedown', (e) => {
     if (!input.isPointerLocked) return;
-    if (e.button === 0) wantsMelee = true;
-    if (e.button === 2) wantsRanged = true;
+    if (combatSlot.useSlotSystem) {
+      if (e.button === 0) {
+        if (combatSlot.active === 'melee') wantsMelee = true;
+        else wantsRanged = true;
+      } else if (e.button === 2 && combatSlot.active === 'weapon') {
+        // Zoom only available on the spell slot — melee has no ADS.
+        setZoom(true);
+      }
+    } else {
+      if (combatButtons.melee >= 0 && e.button === combatButtons.melee) wantsMelee = true;
+      if (combatButtons.ranged >= 0 && e.button === combatButtons.ranged) wantsRanged = true;
+    }
   });
   window.addEventListener('mouseup', (e) => {
-    if (e.button === 0) wantsMelee = false;
-    if (e.button === 2) wantsRanged = false;
+    if (combatSlot.useSlotSystem) {
+      if (e.button === 0) { wantsMelee = false; wantsRanged = false; }
+      else if (e.button === 2) setZoom(false);
+    } else {
+      if (combatButtons.melee >= 0 && e.button === combatButtons.melee) wantsMelee = false;
+      if (combatButtons.ranged >= 0 && e.button === combatButtons.ranged) wantsRanged = false;
+    }
   });
   window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // 1 / 2 keys — swap active slot; scroll wheel cycles.
+  // 1 = spell attack, 2 = melee attack.
+  window.addEventListener('keydown', (e) => {
+    if (!combatSlot.useSlotSystem) return;
+    if (e.code === 'Digit1') setCombatSlot('weapon');
+    if (e.code === 'Digit2') setCombatSlot('melee');
+  });
+  window.addEventListener('wheel', () => {
+    if (!combatSlot.useSlotSystem || !input.isPointerLocked) return;
+    setCombatSlot(combatSlot.active === 'melee' ? 'weapon' : 'melee');
+  }, { passive: true });
+
+  // Sync initial body attributes for CSS consumers (HUD slot indicator, scope).
+  document.body?.setAttribute('data-slot', combatSlot.active);
+  if (document.body) document.body.dataset.zoom = '0';
 
   return mesh;
 }
@@ -271,8 +389,9 @@ export function updatePlayer(dt, camera) {
 
   // Mouse look
   const mouse = input.mouseDelta();
-  yaw -= mouse.x * tuning.mouseSensitivity;
-  pitch -= mouse.y * tuning.mouseSensitivity * (settings.invertMouseY ? -1 : 1);
+  const sens = tuning.mouseSensitivity * (zoomState.active ? zoomState.sensScale : 1);
+  yaw -= mouse.x * sens;
+  pitch -= mouse.y * sens * (settings.invertMouseY ? -1 : 1);
   const pitchLimit = (settings.pitchClampDeg ?? 100) * Math.PI / 180;
   pitch = Math.max(-pitchLimit, Math.min(pitchLimit, pitch));
 
@@ -411,37 +530,44 @@ export function updatePlayer(dt, camera) {
   // --- Combat ---
   if (castAnimTimer > 0) castAnimTimer -= dt;
 
-  if (wantsMelee && meleeCooldownTimer <= 0 && input.isPointerLocked) {
+  const meleePressed = wantsMelee || (combatKeys.melee && input.justPressed(combatKeys.melee));
+  if (meleePressed && meleeCooldownTimer <= 0 && input.isPointerLocked) {
     performMelee();
     meleeCooldownTimer = classDef.melee.cooldown;
     meleeSwingTimer = MELEE_SWING_DURATION;
     castAnimTimer = 0.6;
   }
 
-  if (wantsRanged && rangedCooldownTimer <= 0 && input.isPointerLocked) {
-    if (playerMana >= classDef.ranged.manaCost) {
+  const rangedPressed = wantsRanged || (combatKeys.ranged && input.justPressed(combatKeys.ranged));
+  if (rangedPressed && rangedCooldownTimer <= 0 && input.isPointerLocked) {
+    // While spells are disabled (reduced kit), slot-1 ignores mana so firing
+    // feel matches the Aim tab — cooldown is the only gate.
+    const manaOk = !combatSlot.spellsEnabled || playerMana >= classDef.ranged.manaCost;
+    if (manaOk) {
       performRanged(camera);
       rangedCooldownTimer = classDef.ranged.cooldown;
-      playerMana -= classDef.ranged.manaCost;
+      if (combatSlot.spellsEnabled) playerMana -= classDef.ranged.manaCost;
       castAnimTimer = 0.5;
     }
   }
 
-  if (input.justPressed('KeyQ') && spell1CooldownTimer <= 0 && input.isPointerLocked) {
-    if (playerMana >= classDef.spell1.manaCost) {
-      performSpell1(camera);
-      spell1CooldownTimer = classDef.spell1.cooldown;
-      playerMana -= classDef.spell1.manaCost;
-      castAnimTimer = 0.8;
+  if (combatSlot.spellsEnabled) {
+    if (input.justPressed('KeyQ') && spell1CooldownTimer <= 0 && input.isPointerLocked) {
+      if (playerMana >= classDef.spell1.manaCost) {
+        performSpell1(camera);
+        spell1CooldownTimer = classDef.spell1.cooldown;
+        playerMana -= classDef.spell1.manaCost;
+        castAnimTimer = 0.8;
+      }
     }
-  }
 
-  if (input.justPressed('KeyE') && spell2CooldownTimer <= 0 && input.isPointerLocked) {
-    if (playerMana >= classDef.spell2.manaCost) {
-      performSpell2(camera);
-      spell2CooldownTimer = classDef.spell2.cooldown;
-      playerMana -= classDef.spell2.manaCost;
-      castAnimTimer = 0.8;
+    if (input.justPressed('KeyE') && spell2CooldownTimer <= 0 && input.isPointerLocked) {
+      if (playerMana >= classDef.spell2.manaCost) {
+        performSpell2(camera);
+        spell2CooldownTimer = classDef.spell2.cooldown;
+        playerMana -= classDef.spell2.manaCost;
+        castAnimTimer = 0.8;
+      }
     }
   }
 
@@ -571,6 +697,13 @@ function updateCamera(camera, playerPos, dt) {
   camera.position.copy(camPos);
   camTarget.set(pivotX, pivotY, pivotZ);
   camera.lookAt(camTarget);
+
+  // Smooth FOV transition for zoom / ADS.
+  const targetFov = zoomState.active ? zoomState.fov : zoomState.defaultFov;
+  if (Math.abs(camera.fov - targetFov) > 0.1) {
+    camera.fov += (targetFov - camera.fov) * 0.25;
+    camera.updateProjectionMatrix();
+  }
 }
 
 // --- Melee attack ---
@@ -604,6 +737,25 @@ function performMelee() {
     }
     damageNPC(npc, finalDamage);
   }
+
+  // Extra shoot targets (aim calibration dummies etc.) — arc-test each mesh.
+  const seenTargets = new Set();
+  const _p = new THREE.Vector3();
+  for (const m of extraShootTargets) {
+    if (!m.userData.onMeleeHit || seenTargets.has(m.userData.onMeleeHit)) continue;
+    m.getWorldPosition(_p);
+    const dx = _p.x - pos.x;
+    const dz = _p.z - pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > melee.range) continue;
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const dot = fwdX * nx + fwdZ * nz;
+    if (dot < 0) continue;
+    seenTargets.add(m.userData.onMeleeHit);
+    m.userData.onMeleeHit(_p.clone(), damage);
+  }
+
   spawnMeleeVFX();
   sfx.slamImpact();
 }
@@ -651,28 +803,59 @@ function spawnMeleeVFX() {
   animate();
 }
 
+// Aim: raycast from camera through screen-center against world + NPCs + aim targets.
+// Returns world point under the crosshair (or far point if nothing hit).
+export function computeAimTarget(camera, maxDist = aimTuning.maxAimDist) {
+  aimRaycaster.setFromCamera(_aimNDC, camera);
+  aimRaycaster.far = maxDist;
+  const targets = [...getNPCHitboxes(), ...getBlockers(), ...extraShootTargets];
+  const hits = aimRaycaster.intersectObjects(targets, false);
+  if (hits.length > 0) return hits[0].point.clone();
+  return aimRaycaster.ray.origin.clone().addScaledVector(aimRaycaster.ray.direction, maxDist);
+}
+
+// Muzzle position + direction.
+// 'converge' mode aims through the crosshair (parallax-correct).
+// 'parallel' mode fires along camera forward (legacy; useful for A/B comparison).
+function computeMuzzleAndDir(camera) {
+  const camFwd = new THREE.Vector3();
+  camera.getWorldDirection(camFwd);
+  const muzzle = pos.clone();
+  muzzle.y += aimTuning.muzzleUp;
+  muzzle.addScaledVector(camFwd, aimTuning.muzzleForward);
+
+  let dir, aimTarget;
+  if (aimTuning.aimMode === 'parallel') {
+    dir = camFwd.clone();
+    aimTarget = muzzle.clone().addScaledVector(dir, aimTuning.maxAimDist);
+  } else {
+    aimTarget = computeAimTarget(camera);
+    dir = aimTarget.clone().sub(muzzle).normalize();
+  }
+  lastShotDebug = { muzzle: muzzle.clone(), dir: dir.clone(), aimTarget: aimTarget.clone(), t: performance.now() };
+  return { muzzle, dir };
+}
+
 // --- Ranged attack ---
 function performRanged(camera) {
   if (!sceneRef || !camera) return;
   const ranged = classDef.ranged;
-  const baseDir = new THREE.Vector3();
-  camera.getWorldDirection(baseDir);
-  const muzzle = pos.clone();
-  muzzle.y += 0.6;
-  muzzle.addScaledVector(baseDir, 0.5);
-  fireProjectile(muzzle, baseDir, {
-    speed: ranged.projectileSpeed, damage: ranged.damage,
-    color: getClassProjectileColor(), size: 0.2, range: 60,
-  });
-  sfx.pistol();
+  const { muzzle, dir } = computeMuzzleAndDir(camera);
+  const color = aimTuning.colorOverride ?? getClassProjectileColor();
+  const glow = aimTuning.glowOverride ?? CLASS_RANGED_GLOW[classId] ?? null;
+  const opts = {
+    speed: ranged.projectileSpeed, damage: ranged.damage * aimTuning.damageScale,
+    color, size: 0.2, range: 60,
+  };
+  if (glow != null) opts.glowColor = glow;
+  fireProjectile(muzzle, dir, opts);
+  (aimTuning.sfxOverride || classRangedSfx(classId))();
 }
 
 // --- Spells ---
 function performSpell1(camera) {
   if (!sceneRef || !camera) return;
-  const baseDir = new THREE.Vector3();
-  camera.getWorldDirection(baseDir);
-  const muzzle = pos.clone(); muzzle.y += 0.6; muzzle.addScaledVector(baseDir, 0.5);
+  const { muzzle, dir: baseDir } = computeMuzzleAndDir(camera);
 
   switch (classId) {
     case 'knight':
@@ -698,9 +881,7 @@ function performSpell1(camera) {
 
 function performSpell2(camera) {
   if (!sceneRef || !camera) return;
-  const baseDir = new THREE.Vector3();
-  camera.getWorldDirection(baseDir);
-  const muzzle = pos.clone(); muzzle.y += 0.6; muzzle.addScaledVector(baseDir, 0.5);
+  const { muzzle, dir: baseDir } = computeMuzzleAndDir(camera);
 
   switch (classId) {
     case 'knight':
@@ -723,6 +904,35 @@ function performSpell2(camera) {
     case 'rogue':
       spawnSmokeBombVFX(muzzle); sfx.slam(); break;
   }
+}
+
+// Floating damage number — drifts up from the hit point and fades.
+function spawnDamagePopup(point, amount, label, color) {
+  if (!sceneRef) return;
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 96;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 52px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 6;
+  ctx.fillStyle = color;
+  ctx.fillText(`${Math.round(amount)}`, 128, 40);
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText(label, 128, 78);
+  const tex = new THREE.CanvasTexture(c);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  spr.scale.set(1.6, 0.6, 1);
+  spr.position.copy(point);
+  sceneRef.add(spr);
+  const start = performance.now();
+  const step = () => {
+    const e = (performance.now() - start) / 700;
+    if (e >= 1) { sceneRef.remove(spr); tex.dispose(); spr.material.dispose(); return; }
+    spr.position.y = point.y + e * 0.8;
+    spr.material.opacity = 1 - e;
+    requestAnimationFrame(step);
+  };
+  step();
 }
 
 // --- VFX helpers ---
@@ -789,67 +999,86 @@ function getClassProjectileColor() {
 }
 
 function fireProjectile(from, dir, opts) {
-  const { speed, damage, color, size, range, aoe, dot } = opts;
-  const maxDist = range || 60;
-  const npcTargets = getNPCHitboxes();
-  const blockers = getBlockers();
-  const targets = [...npcTargets, ...blockers];
-  // Always raycast from the muzzle (player position), not the camera
-  raycaster.ray.origin.copy(from); raycaster.ray.direction.copy(dir); raycaster.far = maxDist;
-  const hits = raycaster.intersectObjects(targets, false);
-  let endPoint, hitNpc = null;
-  if (hits.length > 0) {
-    const firstHit = hits[0];
-    endPoint = firstHit.point.clone();
-    // Only register NPC hit if the first thing we hit is an NPC (not a wall)
-    hitNpc = firstHit.object.userData.npcRef ?? null;
-  } else {
-    endPoint = from.clone().addScaledVector(dir, maxDist);
-  }
+  const { damage, color, aoe, dot } = opts;
+  const speed = opts.speed * aimTuning.speedScale;
+  const size = opts.size * aimTuning.sizeScale;
+  const maxDist = (opts.range || 60) * aimTuning.rangeScale;
 
   const geo = new THREE.SphereGeometry(size, 10, 8);
   const mat = new THREE.MeshBasicMaterial({ color: opts.glowColor || color });
   const ball = new THREE.Mesh(geo, mat); ball.position.copy(from);
   const core = new THREE.Mesh(new THREE.SphereGeometry(size * 0.6, 8, 6), new THREE.MeshBasicMaterial({ color }));
   ball.add(core); sceneRef.add(ball);
-  const totalDist = from.distanceTo(endPoint);
-  projectiles.push({ mesh: ball, from: from.clone(), dir: dir.clone(), dist: totalDist, speed, t: 0, life: totalDist / speed,
-    pendingHit: { npc: hitNpc, damage, aoe: aoe || 0, point: endPoint, dot } });
+
+  projectiles.push({
+    mesh: ball,
+    pos: from.clone(),
+    dir: dir.clone(),
+    speed,
+    travelled: 0,
+    maxDist,
+    damage, aoe: aoe || 0, dot,
+  });
 }
 
 function updateProjectiles(dt) {
   const blockers = getBlockers();
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
-    p.t += dt;
-    const travelled = p.speed * p.t;
-
-    // Check wall collision during flight
-    const prev = p.mesh.position.clone();
     const step = p.speed * dt;
-    const next = prev.clone().addScaledVector(p.dir, step);
-    let wallHit = false;
-    if (blockers.length > 0) {
-      raycaster.ray.origin.copy(prev);
-      raycaster.ray.direction.copy(p.dir);
-      raycaster.far = step + 0.2;
-      const wallHits = raycaster.intersectObjects(blockers, false);
-      if (wallHits.length > 0) { wallHit = true; p.mesh.position.copy(wallHits[0].point); }
+
+    // Continuous hit detection: raycast the swept step against NPCs + blockers + aim targets.
+    const npcTargets = getNPCHitboxes();
+    const targets = [...npcTargets, ...blockers, ...extraShootTargets];
+    projRaycaster.ray.origin.copy(p.pos);
+    projRaycaster.ray.direction.copy(p.dir);
+    projRaycaster.far = step + 0.05;
+    const hits = targets.length > 0 ? projRaycaster.intersectObjects(targets, false) : [];
+
+    let consumed = false;
+    if (hits.length > 0) {
+      const hit = hits[0];
+      const npc = hit.object.userData.npcRef ?? null;
+      if (npc && !npc.dead) {
+        // Hit-zone multiplier based on height above NPC feet.
+        // NPC humanoid ~1.8m tall, feet at npc.mesh.position.y.
+        const relY = hit.point.y - npc.mesh.position.y;
+        let zoneMult = 1.0; let zoneLabel = 'BODY'; let zoneColor = '#ffcc44';
+        if (relY > 1.45)      { zoneMult = 2.5; zoneLabel = 'HEAD'; zoneColor = '#ff4444'; }
+        else if (relY < 0.7)  { zoneMult = 0.75; zoneLabel = 'LEGS'; zoneColor = '#88ccff'; }
+        const finalDmg = p.damage * zoneMult;
+        damageNPC(npc, finalDmg);
+        spawnDamagePopup(hit.point, finalDmg, zoneLabel, zoneColor);
+        if (p.dot && !npc.dead) {
+          let elapsed = 0;
+          const iv = setInterval(() => {
+            elapsed += 1;
+            if (npc.dead || elapsed > p.dot.duration) { clearInterval(iv); return; }
+            damageNPC(npc, p.dot.dps);
+          }, 1000);
+        }
+      }
+      // Generic target callback (used by aim-calibration dummies).
+      const onHit = hit.object.userData.onProjectileHit;
+      if (typeof onHit === 'function') onHit(hit.point.clone(), p.damage);
+      if (p.aoe > 0) splashDamage(hit.point, p.aoe, p.damage);
+      p.mesh.position.copy(hit.point);
+      consumed = true;
     }
 
-    if (wallHit || travelled >= p.dist || p.t >= p.life) {
-      if (!wallHit && p.pendingHit) {
-        const { npc, damage, aoe, point, dot } = p.pendingHit;
-        if (npc && !npc.dead) { damageNPC(npc, damage);
-          if (dot && !npc.dead) { let elapsed = 0; const interval = setInterval(() => { elapsed += 1; if (npc.dead || elapsed > dot.duration) { clearInterval(interval); return; } damageNPC(npc, dot.dps); }, 1000); }
-        }
-        if (aoe && aoe > 0) splashDamage(point, aoe, damage);
-      }
-      sceneRef.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose();
-      p.mesh.children.forEach((c) => { c.geometry.dispose(); c.material.dispose(); });
-      projectiles.splice(i, 1); continue;
+    if (!consumed) {
+      p.pos.addScaledVector(p.dir, step);
+      p.travelled += step;
+      p.mesh.position.copy(p.pos);
+      if (p.travelled >= p.maxDist) consumed = true;
     }
-    p.mesh.position.copy(p.from).addScaledVector(p.dir, travelled);
+
+    if (consumed) {
+      sceneRef.remove(p.mesh);
+      p.mesh.geometry.dispose(); p.mesh.material.dispose();
+      p.mesh.children.forEach((c) => { c.geometry.dispose(); c.material.dispose(); });
+      projectiles.splice(i, 1);
+    }
   }
 }
 
@@ -872,7 +1101,7 @@ function damagePlayer(amount) {
 }
 
 function respawnPlayer() {
-  const sp = pickRandomSpawn('map1');
+  const sp = pickRandomSpawn('range');
   pos.set(sp.x, 2.5, sp.z);
   vel.set(0, 0, 0);
   playerHP = playerMaxHP;

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GAME LOGS — MANA FIGHT</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; min-height: 100%; background: #0a0810; color: #eee; font-family: 'Courier New', monospace; }
+    body { padding: 56px 32px 48px; overflow-x: hidden; }
+
+    /* Nav tabs (same pattern as other pages) */
+    #nav-tabs {
+      position: fixed; top: 0; left: 0;
+      display: flex; gap: 0; z-index: 200; pointer-events: auto;
+    }
+    #nav-tabs a {
+      font-family: 'Courier New', monospace; font-size: 12px; letter-spacing: 2px;
+      text-transform: uppercase; text-decoration: none; padding: 8px 20px;
+      background: rgba(0,0,0,0.75); color: #777;
+      border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    #nav-tabs a:hover { color: #ccc; }
+    #nav-tabs a.active { color: #ff8833; background: rgba(0,0,0,0.9); border-bottom-color: #ff8833; }
+
+    /* Header */
+    header {
+      max-width: 1100px; margin: 0 auto 20px;
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    header h1 {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 28px; letter-spacing: 4px; color: #ff8833;
+      text-transform: uppercase;
+    }
+    header h1 small { font-size: 11px; color: #888; letter-spacing: 2px; display: block; margin-top: 2px; }
+
+    #mode-chip {
+      padding: 6px 10px; border-radius: 3px; font-size: 10px; letter-spacing: 2px;
+      border: 1px solid rgba(255,136,51,0.3); color: #ff8833;
+      background: rgba(255,136,51,0.08); text-transform: uppercase;
+    }
+    #mode-chip.admin { color: #44ff88; border-color: rgba(68,255,136,0.35); background: rgba(68,255,136,0.08); }
+
+    .mode-wrap { display: flex; align-items: center; gap: 8px; }
+    #unlock-btn, #lock-btn {
+      font-family: 'Courier New', monospace; font-size: 10px;
+      padding: 6px 10px; border-radius: 3px;
+      background: rgba(255,136,51,0.1); color: #ff8833;
+      border: 1px solid rgba(255,136,51,0.3);
+      cursor: pointer; text-transform: uppercase; letter-spacing: 2px;
+    }
+    #lock-btn { color: #f66; border-color: rgba(255,100,100,0.3); background: rgba(255,100,100,0.1); }
+    #unlock-btn:hover, #lock-btn:hover { filter: brightness(1.2); }
+
+    #unlock-dlg input {
+      width: 100%; padding: 8px 10px; margin-top: 4px;
+      background: #08060a; color: #eee;
+      border: 1px solid rgba(255,136,51,0.25); border-radius: 3px;
+      font: 13px 'Courier New', monospace; letter-spacing: 2px;
+    }
+    #unlock-dlg .err { color: #f66; font-size: 11px; min-height: 14px; margin-top: 6px; letter-spacing: 1px; }
+    #unlock-dlg.shake { animation: shake 0.25s; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-6px); }
+      75% { transform: translateX(6px); }
+    }
+
+    /* Table */
+    main { max-width: 1100px; margin: 0 auto; }
+
+    section.category {
+      margin-bottom: 22px;
+      border: 1px solid rgba(255,136,51,0.15); border-radius: 6px;
+      background: rgba(18,12,6,0.7); overflow: hidden;
+    }
+    section.category h2 {
+      font-family: 'Rajdhani', sans-serif; font-size: 16px; letter-spacing: 3px;
+      color: #ffb088; text-transform: uppercase;
+      padding: 10px 14px; border-bottom: 1px solid rgba(255,136,51,0.15);
+      background: rgba(255,136,51,0.06);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    section.category h2 .cat-actions { display: flex; gap: 6px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      text-align: left; padding: 8px 12px; font-size: 10px; letter-spacing: 1.5px;
+      color: #cc6622; text-transform: uppercase; border-bottom: 1px solid rgba(255,136,51,0.12);
+      background: rgba(255,136,51,0.03);
+    }
+    tbody td {
+      padding: 8px 12px; border-bottom: 1px solid rgba(255,136,51,0.06);
+      vertical-align: middle;
+    }
+    tbody tr:hover { background: rgba(255,136,51,0.04); }
+
+    td.col-item  { width: 28%; font-weight: 600; color: #fff; }
+    td.col-status { width: 18%; }
+    td.col-progress { width: 18%; }
+    td.col-notes { color: #ccbfa5; font-family: 'Rajdhani', sans-serif; font-size: 14px; letter-spacing: 0.3px; }
+    td.col-actions { width: 70px; text-align: right; }
+
+    /* Status chip */
+    .status {
+      display: inline-block; padding: 3px 9px; border-radius: 3px;
+      font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+      border: 1px solid;
+    }
+    .status.done       { color: #44ff88; border-color: rgba(68,255,136,0.35); background: rgba(68,255,136,0.08); }
+    .status.ongoing    { color: #44bbff; border-color: rgba(68,187,255,0.35); background: rgba(68,187,255,0.08); }
+    .status.in-dev     { color: #ffcc44; border-color: rgba(255,204,68,0.35); background: rgba(255,204,68,0.08); }
+    .status.not-started{ color: #888;    border-color: rgba(136,136,136,0.35); background: rgba(136,136,136,0.08); }
+    .status.idea       { color: #c88cff; border-color: rgba(200,140,255,0.35); background: rgba(200,140,255,0.08); }
+
+    /* Progress bar */
+    .bar-wrap { width: 140px; height: 14px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,136,51,0.2); border-radius: 2px; position: relative; overflow: hidden; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, #cc6622, #ff9955); transition: width 0.2s; }
+    .bar-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.9); letter-spacing: 1px; }
+
+    /* Edit controls (admin only) */
+    .inline-edit { background: transparent; border: 1px dashed rgba(255,136,51,0.25); border-radius: 2px; color: inherit; font: inherit; padding: 2px 6px; width: 100%; }
+    .inline-edit:focus { outline: none; border-color: #ff8833; background: rgba(255,136,51,0.06); }
+    select.inline-edit { cursor: pointer; }
+
+    .btn {
+      font-family: 'Courier New', monospace; font-size: 10px;
+      padding: 4px 8px; background: rgba(255,136,51,0.12); color: #ff8833;
+      border: 1px solid rgba(255,136,51,0.3); border-radius: 2px;
+      cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .btn:hover { background: rgba(255,136,51,0.22); color: #fff; }
+    .btn.danger { color: #f66; border-color: rgba(255,100,100,0.3); background: rgba(255,100,100,0.1); }
+    .btn.ghost  { background: transparent; }
+
+    /* Admin toolbar */
+    #admin-toolbar {
+      position: sticky; bottom: 14px; margin-top: 24px;
+      display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
+      padding: 10px 14px; background: rgba(8,6,2,0.9); border: 1px solid rgba(255,136,51,0.2); border-radius: 6px;
+    }
+    #admin-toolbar .hint { color: #888; font-size: 11px; margin-right: auto; align-self: center; letter-spacing: 1px; }
+
+    /* JSON dialog */
+    dialog {
+      background: #120a06; color: #eee; border: 1px solid rgba(255,136,51,0.35);
+      border-radius: 6px; padding: 16px; max-width: 720px; width: 90vw;
+      font-family: 'Courier New', monospace;
+    }
+    dialog::backdrop { background: rgba(0,0,0,0.7); }
+    dialog h3 { color: #ff8833; font-size: 14px; letter-spacing: 2px; margin-bottom: 10px; }
+    dialog textarea { width: 100%; min-height: 320px; background: #08060a; color: #cfc; border: 1px solid rgba(255,136,51,0.2); border-radius: 3px; padding: 10px; font: 12px 'Courier New', monospace; }
+    dialog .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+    /* Read-only hides edit affordances */
+    body.readonly .admin-only { display: none !important; }
+    body.readonly .inline-edit { display: none; }
+    body.readonly .readonly-only { display: inline-block; }
+    body:not(.readonly) .readonly-only { display: none; }
+  </style>
+</head>
+<body class="readonly">
+  <div id="nav-tabs">
+    <a href="/">Play</a>
+    <a href="/range.html">Range</a>
+    <a href="/dev.html">Movement</a>
+    <a href="/lab.html">Model Lab</a>
+    <a href="/aim.html">Aim</a>
+    <a href="/logs.html" class="active">Game Logs</a>
+  </div>
+
+  <header>
+    <h1>
+      Game Logs
+      <small>MANA FIGHT · dev tracker</small>
+    </h1>
+    <div class="mode-wrap">
+      <div id="mode-chip">view mode</div>
+      <button id="unlock-btn" type="button">Unlock Admin</button>
+      <button id="lock-btn" type="button" style="display:none">Lock</button>
+    </div>
+  </header>
+
+  <dialog id="unlock-dlg">
+    <h3 style="color:#ff8833;font-size:14px;letter-spacing:2px;margin-bottom:10px;">Admin Access</h3>
+    <label style="font-size:11px;color:#ccc;letter-spacing:1px;">Password
+      <input type="password" id="unlock-input" autocomplete="off" spellcheck="false" />
+    </label>
+    <div class="err" id="unlock-err"></div>
+    <div class="dlg-actions">
+      <button class="btn ghost" id="unlock-cancel" type="button">Cancel</button>
+      <button class="btn" id="unlock-submit" type="button">Unlock</button>
+    </div>
+  </dialog>
+
+  <main id="logs-root"></main>
+
+  <div id="admin-toolbar" class="admin-only">
+    <span class="hint">Admin mode — edits persist to this browser. Use "Export" to ship changes.</span>
+    <button class="btn" id="btn-add-category">+ Category</button>
+    <button class="btn" id="btn-export">Export JSON</button>
+    <button class="btn" id="btn-import">Import JSON</button>
+    <button class="btn danger" id="btn-reset">Reset Defaults</button>
+  </div>
+
+  <dialog id="json-dlg">
+    <h3 id="dlg-title">Export</h3>
+    <textarea id="dlg-ta" spellcheck="false"></textarea>
+    <div class="dlg-actions">
+      <button class="btn ghost" id="dlg-close">Close</button>
+      <button class="btn" id="dlg-apply">Apply</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="/src/logs.js"></script>
+</body>
+</html>

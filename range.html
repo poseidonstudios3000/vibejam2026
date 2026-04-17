@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RANGE — MANA FIGHT</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; }
+
+    /* Nav tabs */
+    #nav-tabs {
+      position: fixed; top: 0; left: 0;
+      display: flex; gap: 0; z-index: 200; pointer-events: auto;
+    }
+    #nav-tabs a {
+      font-family: 'Courier New', monospace; font-size: 12px; letter-spacing: 2px;
+      text-transform: uppercase; text-decoration: none; padding: 8px 20px;
+      background: rgba(0,0,0,0.6); color: #777;
+      border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    #nav-tabs a:hover { color: #ccc; }
+    #nav-tabs a.active { color: #ff8833; background: rgba(0,0,0,0.8); border-bottom-color: #ff8833; }
+
+    #hud {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 10;
+      font-family: 'Courier New', monospace; color: #ff8833;
+    }
+
+    #label {
+      position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+      font-size: 13px; letter-spacing: 3px; text-transform: uppercase; opacity: 0.7;
+    }
+
+    /* Shared crosshair with the Aim / Arena tabs */
+    #crosshair {
+      position: absolute; top: 50%; left: 50%;
+      width: 22px; height: 22px; transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    #crosshair svg { display: block; }
+
+    /* Scope overlay — driven by body[data-zoom="1"] (from player.js) */
+    #scope {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0;
+      transition: opacity 120ms ease-out;
+      background:
+        radial-gradient(circle at center, transparent 0%, transparent 28%, rgba(0,0,0,0.75) 30%, rgba(0,0,0,0.95) 100%);
+    }
+    body[data-zoom="1"] #scope { opacity: 1; }
+    #scope::before, #scope::after { content: ''; position: absolute; background: rgba(0,0,0,0.8); }
+    #scope::before { left: 50%; top: 0; width: 1px; height: 100%; }
+    #scope::after  { top: 50%; left: 0; width: 100%; height: 1px; }
+
+    #click-prompt {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 18px; color: #fff; opacity: 0.85; text-align: center;
+      margin-top: 50px; letter-spacing: 2px;
+    }
+
+    #hints {
+      position: absolute; bottom: 14px; left: 14px;
+      font-size: 12px; color: #888; line-height: 1.7;
+    }
+    #hints span { color: #ff8833; font-weight: bold; }
+
+    /* Telemetry */
+    #telemetry {
+      position: absolute; top: 40px; left: 8px;
+      font-size: 12px; line-height: 1.7; opacity: 0.95;
+      background: rgba(0,0,0,0.65); padding: 10px 14px; border-radius: 6px;
+      border: 1px solid rgba(255,136,51,0.18); color: #ffcc88;
+      min-width: 220px;
+    }
+    #telemetry .row { display: flex; justify-content: space-between; }
+    #telemetry .row .v { color: #fff; font-weight: bold; }
+
+    /* Weapon rail */
+    #weapon-rail {
+      position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; pointer-events: auto;
+    }
+    .weapon-slot {
+      width: 80px; padding: 6px 8px; border-radius: 6px;
+      background: rgba(0,0,0,0.65);
+      border: 1px solid rgba(255,136,51,0.2);
+      color: #ffcc88; font-family: 'Courier New', monospace;
+      font-size: 10px; text-align: center; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 1px; transition: all 0.15s;
+    }
+    .weapon-slot .key { display:block; font-size: 14px; font-weight: bold; color: #ff8833; }
+    .weapon-slot:hover { border-color: rgba(255,136,51,0.5); color: #fff; }
+    .weapon-slot.active {
+      background: rgba(255,136,51,0.18); color: #fff;
+      border-color: #ff8833; box-shadow: 0 0 12px rgba(255,136,51,0.4);
+    }
+
+    /* Class pills (top-right) */
+    #class-pills {
+      position: absolute; top: 36px; right: 8px;
+      background: rgba(12,6,0,0.8);
+      border: 1px solid rgba(255,136,51,0.2); border-radius: 6px;
+      padding: 8px; pointer-events: auto;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+      font-family: 'Courier New', monospace;
+    }
+    #class-pills h4 { grid-column: 1 / -1; font-size: 10px; color: #ff8833; letter-spacing: 2px; margin-bottom: 2px; text-transform: uppercase; }
+    #class-pills .pill {
+      padding: 5px 10px; font-size: 10px;
+      background: rgba(255,136,51,0.08); color: #ffb88a;
+      border: 1px solid rgba(255,136,51,0.2); border-radius: 3px;
+      cursor: pointer; text-transform: uppercase; letter-spacing: 1px; text-align: center;
+    }
+    #class-pills .pill:hover { color: #fff; border-color: rgba(255,136,51,0.45); }
+    #class-pills .pill.active { background: rgba(255,136,51,0.25); color: #fff; border-color: #ff8833; }
+  </style>
+</head>
+<body>
+  <div id="nav-tabs">
+    <a href="/">Play</a>
+    <a href="/range.html" class="active">Range</a>
+    <a href="/dev.html">Movement</a>
+    <a href="/lab.html">Model Lab</a>
+    <a href="/aim.html">Aim</a>
+    <a href="/logs.html">Game Logs</a>
+  </div>
+
+  <div id="hud">
+    <div id="label">Range</div>
+
+    <div id="scope"></div>
+    <div id="crosshair">
+      <svg width="22" height="22" viewBox="-11 -11 22 22">
+        <line x1="-10" y1="0" x2="-3" y2="0" stroke="white" stroke-opacity="0.75" stroke-width="2"/>
+        <line x1="3" y1="0" x2="10" y2="0" stroke="white" stroke-opacity="0.75" stroke-width="2"/>
+        <line x1="0" y1="-10" x2="0" y2="-3" stroke="white" stroke-opacity="0.75" stroke-width="2"/>
+        <line x1="0" y1="3" x2="0" y2="10" stroke="white" stroke-opacity="0.75" stroke-width="2"/>
+        <circle cx="0" cy="0" r="2" fill="#ff4444"/>
+      </svg>
+    </div>
+    <div id="click-prompt">Click to play &nbsp;·&nbsp; LMB fires &nbsp;·&nbsp; RMB zoom</div>
+
+    <div id="telemetry">
+      <div class="row"><span>CLASS</span><span class="v" id="t-class">—</span></div>
+      <div class="row"><span>SLOT</span><span class="v" id="t-slot">—</span></div>
+      <div class="row"><span>HP</span><span class="v" id="t-hp">—</span></div>
+      <div class="row"><span>KILLS</span><span class="v" id="t-kills">0</span></div>
+      <div class="row"><span>ALIVE</span><span class="v" id="t-alive">0</span></div>
+    </div>
+
+    <div id="class-pills">
+      <h4>Class</h4>
+      <div class="pill" data-class="knight">Tank</div>
+      <div class="pill" data-class="archer">Ranger</div>
+      <div class="pill" data-class="mage">Eso</div>
+      <div class="pill" data-class="rogue">Phantom</div>
+    </div>
+
+    <div id="hints">
+      <span>WASD</span> move &nbsp; <span>SHIFT</span> sprint &nbsp; <span>SPACE</span> jump &nbsp;
+      <span>LMB</span> attack &nbsp; <span>RMB</span> zoom &nbsp;
+      <span>1/2</span> or <span>SCROLL</span> swap &nbsp; <span>P</span> pause
+    </div>
+
+    <div id="weapon-rail">
+      <div class="weapon-slot active" data-slot="weapon">
+        <span class="key">1</span>
+        <span class="slot-name" id="slot-weapon-name">Spell</span>
+      </div>
+      <div class="weapon-slot" data-slot="melee">
+        <span class="key">2</span>
+        <span class="slot-name" id="slot-melee-name">Melee</span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/range.js"></script>
+</body>
+</html>

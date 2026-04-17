@@ -76,7 +76,7 @@ const MELEE_RANGE = 3.0;
 const npcProjectiles = [];
 let playerDamageCallback = null;
 let killCount = 0;
-let currentMapName = 'map1';
+let currentMapName = 'range';
 const RESPAWN_DELAY = 5.0;
 
 const NPC_PROJECTILE_HIT_RADIUS = 1.0;
@@ -93,26 +93,40 @@ const SPAWNS_SANDBOX = [
   { x: -18, z:   8 },
 ];
 
-const SPAWNS_MAP1 = [
-  { x: -22, z: -22 },
-  { x:  22, z: -22 },
-  { x:  22, z:  22 },
-  { x: -22, z:  22 },
-  { x:   0, z:  30 },
+// Range map — wide, open firing field. NPCs spread out so the player has a
+// clear approach vector and can practice at varied distances.
+const SPAWNS_RANGE = [
+  { x: -8, z: -10 }, { x:  8, z: -10 },
+  { x: -14, z: -22 }, { x:  14, z: -22 },
+  { x: -4, z: -34 }, { x:  4, z: -34 },
+  { x: -20, z: -45 }, { x:  20, z: -45 },
 ];
 
-export function initNPCs(scene, mapName = 'sandbox') {
+const SPAWNS_BY_MAP = {
+  range: SPAWNS_RANGE,
+  sandbox: SPAWNS_SANDBOX,
+};
+
+// Per-map probability that a spawned NPC is a stationary sentry (no wandering).
+const STATIC_CHANCE = {
+  range: 0.5,   // roughly half the range NPCs hold position, half wander
+  sandbox: 0.0,
+};
+
+export function initNPCs(scene, mapName = 'range') {
   sceneRef = scene;
   currentMapName = mapName;
-  const spawns = mapName === 'map1' ? SPAWNS_MAP1 : SPAWNS_SANDBOX;
+  const spawns = SPAWNS_BY_MAP[mapName] || SPAWNS_SANDBOX;
+  const staticP = STATIC_CHANCE[mapName] ?? 0.0;
   for (let i = 0; i < spawns.length; i++) {
     const s = spawns[i];
     const classId = NPC_CLASSES[Math.floor(Math.random() * NPC_CLASSES.length)];
-    spawnNPC(s.x, s.z, classId);
+    const isStatic = Math.random() < staticP;
+    spawnNPC(s.x, s.z, classId, isStatic);
   }
 }
 
-function spawnNPC(x, z, npcClassId) {
+function spawnNPC(x, z, npcClassId, isStatic = false) {
   const classDef = CLASS_DEFS[npcClassId];
   const group = buildClassModel(npcClassId);
   group.position.set(x, 0.5, z);
@@ -142,6 +156,7 @@ function spawnNPC(x, z, npcClassId) {
     shootCdMin,
     shootCdMax,
     meleeCd,
+    static: isStatic,
     dead: false,
     originX: x,
     originZ: z,
@@ -264,6 +279,25 @@ export function updateNPCs(dt, playerPos) {
     }
 
     // --- Movement ---
+    // Sentry NPCs are frozen in place — they only rotate toward the player and shoot.
+    if (npc.static) {
+      const { legL, legR, armL, armR } = npc.mesh.userData;
+      if (legL) {
+        legL.rotation.x = THREE.MathUtils.lerp(legL.rotation.x, 0, 0.2);
+        legR.rotation.x = THREE.MathUtils.lerp(legR.rotation.x, 0, 0.2);
+        armL.rotation.x = THREE.MathUtils.lerp(armL.rotation.x, 0, 0.2);
+        armR.rotation.x = THREE.MathUtils.lerp(armR.rotation.x, 0, 0.2);
+      }
+      const surfaceY = getSurfaceY(npc.mesh.position.x, npc.mesh.position.z);
+      npc.mesh.position.y = surfaceY + 0.5;
+      if (!currentTarget) {
+        // Idle-face their original orientation (toward map center).
+        const fdx = -npc.originX, fdz = -npc.originZ;
+        if (fdx * fdx + fdz * fdz > 0.01) npc.mesh.rotation.y = Math.atan2(-fdx, -fdz);
+      }
+      continue;
+    }
+
     const dx = npc.targetX - npc.mesh.position.x;
     const dz = npc.targetZ - npc.mesh.position.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
@@ -473,6 +507,8 @@ function respawnNPC(npc) {
   npc.meleeCd = newClassDef.melee.cooldown * 1.2;
   npc.originX = sp.x;
   npc.originZ = sp.z;
+  // Re-roll static vs wander on respawn so the mix stays lively.
+  npc.static = Math.random() < (STATIC_CHANCE[currentMapName] ?? 0.0);
   npc.dead = false;
   npc.deathTimer = 0;
   npc.pauseTimer = 0;
