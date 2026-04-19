@@ -13,12 +13,17 @@ import { settings } from './settings.js';
 import { CLASS_DEFS } from './classes.js';
 import {
   createPlayer, updatePlayer, updateDebris, setPlayerPosition, getPlayerPosition,
+  getPlayerYaw,
   setInfiniteMana, setInfiniteStamina,
   getPlayerHP, getPlayerMana, getPlayerStamina,
   aimTuning,
   combatSlot, setCombatSlot, zoomState,
+  setLocalCastListener, spawnRemoteSpell, spawnRemoteMelee,
 } from './player.js';
 import { initNPCs, updateNPCs, aliveNPCCount, getKillCount } from './npc.js';
+import { buildClassModel, cloneClassModel } from './classes.js';
+import { playAnimation, updateModelAnimation } from './modelLoader.js';
+import { initMultiplayer, broadcastState, broadcastEvent, multi } from './multi.js';
 
 // --- Renderer / scene / camera ---
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -176,6 +181,7 @@ const tSlot = document.getElementById('t-slot');
 const tKills = document.getElementById('t-kills');
 const tAlive = document.getElementById('t-alive');
 const tHp = document.getElementById('t-hp');
+const tPeers = document.getElementById('t-peers');
 
 // --- Resize + pause ---
 window.addEventListener('resize', () => {
@@ -200,6 +206,109 @@ function resume() { paused = false; clock.start(); const p = document.getElement
 refreshSlotRail();
 setCombatSlot('weapon');
 
+// --- Multiplayer (P2P, no backend) ---
+// Peers are rendered as lightweight class-primitive models that lerp toward
+// the latest reported pos/yaw. Each client is authoritative for its own state.
+const peers = new Map();
+const _peerTmp = new THREE.Vector3();
+
+function disposePeerMesh(peer) {
+  scene.remove(peer.mesh);
+  peer.mesh.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose?.();
+  });
+}
+
+function ensurePeerMesh(peerId, classId) {
+  let peer = peers.get(peerId);
+  if (peer && peer.classId === classId) return peer;
+  if (peer && peer.mesh) disposePeerMesh(peer);
+
+  // Instant primitive mesh so peers appear right away; upgrade to GLB async.
+  const mesh = buildClassModel(classId || 'mage');
+  mesh.position.set(0, 0.5, 0);
+  scene.add(mesh);
+  peer = {
+    mesh, classId: classId || 'mage',
+    pos: new THREE.Vector3(0, 0.5, 0),
+    targetPos: new THREE.Vector3(0, 0.5, 0),
+    yaw: 0, targetYaw: 0,
+    lastSeen: performance.now(),
+    lastStateTime: 0,
+    moveSpeed: 0,
+  };
+  peers.set(peerId, peer);
+
+  // Same upgrade path NPCs use — fall back silently to primitives if the GLB
+  // isn't there yet. Skip the swap if the peer has since disconnected or
+  // switched classes mid-load.
+  if (CLASS_DEFS[peer.classId]?.modelUrl) {
+    cloneClassModel(peer.classId).then((loaded) => {
+      const current = peers.get(peerId);
+      if (!loaded || !current || current.classId !== peer.classId) return;
+      disposePeerMesh(current);
+      loaded.position.copy(current.pos);
+      loaded.rotation.y = current.yaw + (loaded.userData.yawOffset || 0);
+      scene.add(loaded);
+      current.mesh = loaded;
+      playAnimation(loaded, 'idle');
+    }).catch((err) => {
+      console.warn(`[range] peer GLB upgrade failed for ${peer.classId}:`, err?.message || err);
+    });
+  }
+
+  return peer;
+}
+
+initMultiplayer({
+  onPeerLeave: (peerId) => {
+    const peer = peers.get(peerId);
+    if (!peer) return;
+    disposePeerMesh(peer);
+    peers.delete(peerId);
+    updatePeerCount();
+  },
+  onPeerState: (peerId, data) => {
+    if (!data || typeof data !== 'object') return;
+    const peer = ensurePeerMesh(peerId, data.classId);
+    const now = performance.now();
+    // Estimate peer's speed from successive broadcasts so we can pick the
+    // right animation (idle/walk/run) on GLB models.
+    if (peer.lastStateTime > 0) {
+      const dt = (now - peer.lastStateTime) / 1000;
+      if (dt > 0) {
+        const dx = data.x - peer.targetPos.x;
+        const dy = data.y - peer.targetPos.y;
+        const dz = data.z - peer.targetPos.z;
+        peer.moveSpeed = Math.sqrt(dx * dx + dy * dy + dz * dz) / dt;
+      }
+    }
+    peer.lastStateTime = now;
+    peer.targetPos.set(data.x, data.y, data.z);
+    peer.targetYaw = data.yaw || 0;
+    peer.lastSeen = now;
+    updatePeerCount();
+  },
+  onPeerEvent: (peerId, data) => {
+    if (!data || !data.type) return;
+    if (data.type === 'spell') {
+      spawnRemoteSpell(data.classId, data.muzzle, data.dir);
+    } else if (data.type === 'melee') {
+      spawnRemoteMelee(data.classId, data.pos, data.yaw, data.side ?? 0);
+    }
+  },
+});
+
+// Relay our own casts to peers so they see our Fireballs / Daggers / etc.
+setLocalCastListener((evt) => {
+  broadcastEvent(evt.type, evt);
+});
+
+function updatePeerCount() {
+  if (tPeers) tPeers.textContent = `${multi.peerCount}`;
+}
+
 // --- Loop ---
 function loop() {
   requestAnimationFrame(loop);
@@ -215,6 +324,39 @@ function loop() {
     tHp.textContent = `${hp.hp} / ${hp.max}`;
     tKills.textContent = `${getKillCount()}`;
     tAlive.textContent = `${aliveNPCCount()}`;
+
+    // --- Multiplayer: broadcast self + smoothly interpolate peer meshes. ---
+    const pp = getPlayerPosition();
+    broadcastState({
+      x: pp.x, y: pp.y, z: pp.z,
+      yaw: getPlayerYaw(),
+      classId,
+    });
+    for (const peer of peers.values()) {
+      peer.pos.lerp(peer.targetPos, 0.25);
+      peer.yaw += (peer.targetYaw - peer.yaw) * 0.25;
+      peer.mesh.position.copy(peer.pos);
+      peer.mesh.rotation.y = peer.yaw + (peer.mesh.userData.yawOffset || 0);
+
+      if (peer.mesh.userData.isLoadedModel) {
+        // GLB path: pick anim by broadcast speed, drive the mixer.
+        const s = peer.moveSpeed || 0;
+        const anim = s > 5 ? 'run' : s > 0.3 ? 'walk' : 'idle';
+        playAnimation(peer.mesh, anim);
+        updateModelAnimation(peer.mesh, dt);
+      } else {
+        // Primitive fallback: manual limb swing while moving.
+        const speed2 = peer.targetPos.distanceToSquared(peer.pos);
+        if (speed2 > 0.002 && peer.mesh.userData.legL) {
+          peer.mesh.userData.walkCycle = (peer.mesh.userData.walkCycle || 0) + dt * 6;
+          const s = Math.sin(peer.mesh.userData.walkCycle) * 0.5;
+          peer.mesh.userData.legL.rotation.x = s;
+          peer.mesh.userData.legR.rotation.x = -s;
+          if (peer.mesh.userData.armL) peer.mesh.userData.armL.rotation.x = -s * 0.6;
+          if (peer.mesh.userData.armR) peer.mesh.userData.armR.rotation.x = s * 0.6;
+        }
+      }
+    }
 
     input.flush();
   }

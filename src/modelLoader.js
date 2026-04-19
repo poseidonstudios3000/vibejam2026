@@ -25,9 +25,18 @@ export async function loadCharacterModel(modelUrl, animUrls) {
     const gltf = await loadGLB(animUrls);
     animGltfs = [{ gltf, key: cleanClipName(gltf.animations?.[0]?.name || 'idle') }];
   } else if (animUrls && typeof animUrls === 'object') {
+    // Tolerate missing/failed anim files — skip the bad ones and keep going
+    // so a partial export (idle ready, cast not yet) still upgrades the model.
     const entries = Object.entries(animUrls);
-    const loaded = await Promise.all(entries.map(([, url]) => loadGLB(url)));
-    animGltfs = loaded.map((gltf, i) => ({ gltf, key: entries[i][0] }));
+    const loaded = await Promise.all(entries.map(([, url]) =>
+      loadGLB(url).catch((err) => {
+        console.warn(`[ModelLoader] Skipping anim '${url}':`, err?.message || err);
+        return null;
+      }),
+    ));
+    animGltfs = loaded
+      .map((gltf, i) => gltf ? { gltf, key: entries[i][0] } : null)
+      .filter(Boolean);
   }
 
   const model = modelGltf.scene;

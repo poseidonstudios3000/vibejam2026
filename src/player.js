@@ -126,6 +126,48 @@ export function getActiveProjectiles() { return projectiles; }
 export const combatButtons = { melee: 0, ranged: 2 };
 export const combatKeys = { melee: null, ranged: null };
 
+// Local-cast listener — multiplayer uses this to broadcast spell / melee events
+// so peers can render the same visual. Null by default (single-player).
+let localCastListener = null;
+export function setLocalCastListener(fn) { localCastListener = fn; }
+
+// Spawn a peer's spell as a cosmetic projectile — reuses the player's visual
+// + sfx path but skips hit detection, so it doesn't double-damage NPCs.
+export function spawnRemoteSpell(remoteClassId, muzzle, dir) {
+  if (!sceneRef) return;
+  const def = CLASS_DEFS[remoteClassId];
+  const ranged = def?.ranged;
+  if (!ranged) return;
+  const m = new THREE.Vector3(muzzle.x, muzzle.y, muzzle.z);
+  const d = new THREE.Vector3(dir.x, dir.y, dir.z).normalize();
+  const color = ranged.color ?? CLASS_RANGED_GLOW[remoteClassId] ?? 0xffcc00;
+  const glow = ranged.glow ?? CLASS_RANGED_GLOW[remoteClassId] ?? color;
+  const opts = {
+    speed: ranged.projectileSpeed,
+    damage: 0,
+    color,
+    size: ranged.size ?? 0.2,
+    range: ranged.range ?? 60,
+    aoe: 0,
+    flame: ranged.flame === true,
+    arrow: ranged.arrow === true,
+    shadow: ranged.shadow === true,
+    dagger: ranged.dagger === true,
+    cosmetic: true,
+    glowColor: glow,
+  };
+  fireProjectile(m, d, opts);
+  const sfxName = ranged.sfx;
+  if (sfxName && typeof sfx[sfxName] === 'function') sfx[sfxName]();
+}
+
+export function spawnRemoteMelee(remoteClassId, remotePos, remoteYaw, side = 0) {
+  if (!sceneRef) return;
+  const p = new THREE.Vector3(remotePos.x, remotePos.y, remotePos.z);
+  spawnMeleeVFX(side, p, remoteYaw, remoteClassId);
+  sfx.slamImpact();
+}
+
 // --- MANA FIGHT slot system ---
 // Slot mapping:
 //   1 → 'weapon' (spell attack): LMB fires, RMB zooms (scope / ADS)
@@ -539,14 +581,26 @@ export function updatePlayer(dt, camera) {
     const combo = Math.max(1, classDef.melee.combo ?? 1);
     const comboDelayMs = (classDef.melee.comboDelay ?? 0.12) * 1000;
     const dmgFactor = 1 / combo;
-    // First stab — swings to one side (left) for combos, centered otherwise.
-    performMelee(dmgFactor, combo > 1 ? -1 : 0);
-    // Schedule follow-up stabs alternating sides for a left/right visual.
+    const firstSide = combo > 1 ? -1 : 0;
+    performMelee(dmgFactor, firstSide);
+    if (localCastListener) {
+      localCastListener({
+        type: 'melee',
+        classId,
+        pos: { x: pos.x, y: pos.y, z: pos.z }, yaw, side: firstSide,
+      });
+    }
     for (let i = 1; i < combo; i++) {
       const side = (i % 2 === 0) ? -1 : 1;
       setTimeout(() => {
         if (!sceneRef) return;
         performMelee(dmgFactor, side);
+        if (localCastListener) {
+          localCastListener({
+            type: 'melee', classId,
+            pos: { x: pos.x, y: pos.y, z: pos.z }, yaw, side,
+          });
+        }
       }, comboDelayMs * i);
     }
     meleeCooldownTimer = classDef.melee.cooldown;
@@ -776,24 +830,25 @@ function performMelee(damageFactor = 1.0, side = 0) {
   sfx.slamImpact();
 }
 
-function spawnMeleeVFX(side = 0) {
+function spawnMeleeVFX(side = 0, srcPos = pos, srcYaw = yaw, srcClassId = classId) {
   if (!sceneRef) return;
+  const srcClassDef = CLASS_DEFS[srcClassId] ?? classDef;
   const colors = { knight: 0xcc8855, archer: 0xaaaacc, mage: 0xaa66ff, rogue: 0x4488ff };
-  const color = classDef.melee?.vfxColor ?? colors[classId] ?? 0xffffff;
+  const color = srcClassDef.melee?.vfxColor ?? colors[srcClassId] ?? 0xffffff;
 
   // Build arc as a flat fan mesh in XZ plane, centered on player forward.
   // Uses the class's melee.arc width. `side` offsets the fan center slightly
   // left (-1) or right (+1) to show which hand is stabbing in combo attacks.
-  const range = classDef.melee.range;
+  const range = srcClassDef.melee.range;
   const segments = 24;
-  const fullArc = classDef.melee.arc ?? Math.PI; // total arc width
+  const fullArc = srcClassDef.melee.arc ?? Math.PI; // total arc width
   const halfArc = fullArc / 2;
   // Only shift laterally if there's frontal room left (arc < 180°). For a
   // full 180° arc, both stabs span the whole frontal hemisphere; timing
   // differentiates left vs right, not positioning.
   const maxBias = Math.max(0, (Math.PI - fullArc) / 2);
   const sideBias = side * Math.min(maxBias, fullArc * 0.35);
-  const fwdAngle = yaw + sideBias;
+  const fwdAngle = srcYaw + sideBias;
 
   // Create fan geometry manually: center vertex + arc vertices
   const verts = [0, 0, 0]; // center at origin
@@ -814,7 +869,7 @@ function spawnMeleeVFX(side = 0) {
 
   const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
   const fan = new THREE.Mesh(geo, mat);
-  fan.position.set(pos.x, pos.y + 0.6, pos.z);
+  fan.position.set(srcPos.x, srcPos.y + 0.6, srcPos.z);
   sceneRef.add(fan);
 
   const startTime = performance.now();
@@ -887,6 +942,14 @@ function performRanged(camera) {
     if (glow != null) opts.glowColor = glow;
     fireProjectile(muzzle, dir, opts);
     (aimTuning.sfxOverride || classRangedSfx(classId))();
+    if (localCastListener) {
+      localCastListener({
+        type: 'spell',
+        classId,
+        muzzle: { x: muzzle.x, y: muzzle.y, z: muzzle.z },
+        dir: { x: dir.x, y: dir.y, z: dir.z },
+      });
+    }
   };
 
   fireOne();
@@ -1394,6 +1457,7 @@ function fireProjectile(from, dir, opts) {
     flame: !!flame, arrow: !!arrow, shadow: !!shadow, dagger: !!dagger,
     trailColor: opts.glowColor ?? color,
     emberT: 0,
+    cosmetic: !!opts.cosmetic, // peer-originated visuals: travel + fx, no hits.
   });
 }
 
@@ -1403,13 +1467,16 @@ function updateProjectiles(dt) {
     const p = projectiles[i];
     const step = p.speed * dt;
 
-    // Continuous hit detection: raycast the swept step against NPCs + blockers + aim targets.
-    const npcTargets = getNPCHitboxes();
-    const targets = [...npcTargets, ...blockers, ...extraShootTargets];
-    projRaycaster.ray.origin.copy(p.pos);
-    projRaycaster.ray.direction.copy(p.dir);
-    projRaycaster.far = step + 0.05;
-    const hits = targets.length > 0 ? projRaycaster.intersectObjects(targets, false) : [];
+    // Cosmetic projectiles (peers) skip hit detection — they're pure visuals.
+    let hits = [];
+    if (!p.cosmetic) {
+      const npcTargets = getNPCHitboxes();
+      const targets = [...npcTargets, ...blockers, ...extraShootTargets];
+      projRaycaster.ray.origin.copy(p.pos);
+      projRaycaster.ray.direction.copy(p.dir);
+      projRaycaster.far = step + 0.05;
+      hits = targets.length > 0 ? projRaycaster.intersectObjects(targets, false) : [];
+    }
 
     let consumed = false;
     if (hits.length > 0) {
@@ -1593,6 +1660,7 @@ export function updateDebris(dt) {
 export function getPlayer() { return mesh; }
 export function getPlayerPosition() { return pos.clone(); }
 export function getPlayerVelocity() { return vel; }
+export function getPlayerYaw() { return yaw; }
 export function getPlayerHP() { return { hp: Math.max(0, Math.round(playerHP)), max: playerMaxHP }; }
 export function getPlayerMana() { return { mana: Math.max(0, Math.round(playerMana)), max: playerMaxMana }; }
 export function getPlayerState() {
