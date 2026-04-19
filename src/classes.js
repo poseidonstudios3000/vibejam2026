@@ -36,7 +36,7 @@ export const CLASS_DEFS = {
     colors: {
       primary: 0x444455,    // dark grey armor
       emissive: 0x111118,
-      accent: 0xcc6622,     // burnt orange cape
+      accent: 0xcc2233,     // red cape (Tank identity)
       skin: 0xffcc99,
     },
     stats: { offense: 2, defense: 5, mobility: 1, utility: 2 },

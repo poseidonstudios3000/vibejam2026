@@ -353,10 +353,10 @@ document.querySelectorAll('#class-pills .pill').forEach((p) => {
 // Per-class projectile color + SFX are now handled inside player.js. The rail UI
 // just tints the slot borders so the player recognises the active class.
 const CLASS_PROJECTILE_COLOR = {
-  knight: 0xcc8855, archer: 0x88cc44, mage: 0xaa66ff, rogue: 0xaaaacc,
+  knight: 0xcc2233, archer: 0x88cc44, mage: 0xaa66ff, rogue: 0x4488ff,
 };
 const CLASS_MELEE_COLOR = {
-  knight: 0xcc8855, archer: 0xaaaacc, mage: 0xaa66ff, rogue: 0xcc2233,
+  knight: 0xcc2233, archer: 0x88cc44, mage: 0xaa66ff, rogue: 0x4488ff,
 };
 
 function refreshSlotRailUI() {

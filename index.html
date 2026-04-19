@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MANA FIGHT</title>
+  <!-- Vibe Jam 2026 widget (REQUIRED for entry tracking) -->
+  <script async src="https://vibej.am/2026/widget.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
 
@@ -37,6 +39,27 @@
       text-transform: uppercase;
       margin-bottom: 40px;
       font-family: 'Courier New', monospace;
+    }
+
+    #class-select .tagline {
+      font-size: 15px;
+      color: #ccb08c;
+      letter-spacing: 1px;
+      margin-bottom: 36px;
+      font-family: 'Courier New', monospace;
+      max-width: 640px;
+      text-align: center;
+      line-height: 1.5;
+      text-shadow: 0 0 12px rgba(0, 0, 0, 0.7);
+    }
+
+    .class-banner {
+      width: 100%;
+      max-height: 44px;
+      object-fit: contain;
+      margin-bottom: 4px;
+      /* Slight drop shadow to lift off the dark card background */
+      filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.8));
     }
 
     .class-cards {
@@ -201,8 +224,8 @@
     }
 
     /* Tank accent */
-    .class-card[data-class="knight"] .class-name { color: #cc8855; }
-    .class-card[data-class="knight"].selected { border-color: #cc6622; box-shadow: 0 0 20px rgba(204, 102, 34, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
+    .class-card[data-class="knight"] .class-name { color: #ee4455; }
+    .class-card[data-class="knight"].selected { border-color: #cc2233; box-shadow: 0 0 20px rgba(204, 34, 51, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
 
     /* Ranger accent */
     .class-card[data-class="archer"] .class-name { color: #66aa55; }
@@ -213,8 +236,8 @@
     .class-card[data-class="mage"].selected { border-color: #8844cc; box-shadow: 0 0 20px rgba(136, 68, 204, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
 
     /* Phantom accent */
-    .class-card[data-class="rogue"] .class-name { color: #dd4455; }
-    .class-card[data-class="rogue"].selected { border-color: #cc2233; box-shadow: 0 0 20px rgba(204, 34, 51, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
+    .class-card[data-class="rogue"] .class-name { color: #66aaff; }
+    .class-card[data-class="rogue"].selected { border-color: #4488ff; box-shadow: 0 0 20px rgba(68, 136, 255, 0.3), 0 8px 24px rgba(0,0,0,0.5); }
 
     #play-btn {
       padding: 14px 60px;
@@ -477,7 +500,7 @@
 <body>
   <div id="nav-tabs">
     <a href="/" data-map="home">Play</a>
-    <a href="/range.html">Range</a>
+    <a href="/range.html">Map 1</a>
     <a href="/dev.html">Movement</a>
     <a href="/lab.html">Model Lab</a>
     <a href="/aim.html">Aim</a>
@@ -490,17 +513,17 @@
   <!-- ===== CLASS SELECT ===== -->
   <div id="class-select">
     <img src="/assets/mana-fight-logo.png" alt="MANA FIGHT" style="width: 500px; height: auto; margin-bottom: 12px; filter: drop-shadow(0 0 30px rgba(232,132,60,0.3));">
-    <div class="subtitle">Choose your class</div>
+    <p class="tagline">Fast-paced fantasy TPS — pick your class, master your spells, dominate the arena.</p>
 
     <div class="class-cards">
       <!-- Knight -->
       <div class="class-card" data-class="knight">
-        <div class="card-preview" id="preview-knight"><img src="/assets/class-knight.png" alt="Tank"></div>
-        <div class="class-name">Tank</div>
+        <div class="card-preview" id="preview-knight"></div>
+        <img class="class-banner" src="/assets/banner-knight.png" alt="Tank">
         <div class="class-role">Frontline</div>
-        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:40%;background:#cc6622;"></div></div></div>
-        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#cc6622;"></div></div></div>
-        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#cc6622;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:40%;background:#cc2233;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#cc2233;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#cc2233;"></div></div></div>
         <div class="class-abilities">
           <span class="ability-key">1</span> <span class="ability-name">Fireball</span> — 28 dmg, AOE<br>
           <span class="ability-key">2</span> <span class="ability-name">Sword</span> — 35 dmg melee<br>
@@ -511,7 +534,7 @@
       <!-- Archer -->
       <div class="class-card" data-class="archer">
         <div class="card-preview" id="preview-archer"></div>
-        <div class="class-name">Ranger</div>
+        <img class="class-banner" src="/assets/banner-archer.png" alt="Ranger">
         <div class="class-role">DPS / Kite</div>
         <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:80%;background:#3d5c3a;"></div></div></div>
         <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#3d5c3a;"></div></div></div>
@@ -526,7 +549,7 @@
       <!-- Mage -->
       <div class="class-card" data-class="mage">
         <div class="card-preview" id="preview-mage"></div>
-        <div class="class-name">Eso</div>
+        <img class="class-banner" src="/assets/banner-mage.png" alt="Eso">
         <div class="class-role">Area Damage</div>
         <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#8844cc;"></div></div></div>
         <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#8844cc;"></div></div></div>
@@ -541,11 +564,11 @@
       <!-- Rogue -->
       <div class="class-card" data-class="rogue">
         <div class="card-preview" id="preview-rogue"></div>
-        <div class="class-name">Phantom</div>
+        <img class="class-banner" src="/assets/banner-rogue.png" alt="Phantom">
         <div class="class-role">Assassin</div>
-        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:80%;background:#cc2233;"></div></div></div>
-        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#cc2233;"></div></div></div>
-        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#cc2233;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">ATK</span><div class="stat-bar"><div class="stat-bar-fill" style="width:80%;background:#4488ff;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">DEF</span><div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#4488ff;"></div></div></div>
+        <div class="stat-bar-row"><span class="stat-label">SPD</span><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:#4488ff;"></div></div></div>
         <div class="class-abilities">
           <span class="ability-key">1</span> <span class="ability-name">Spirit Daggers</span> — blue twin daggers, 15 dmg each<br>
           <span class="ability-key">2</span> <span class="ability-name">Twin Daggers</span> — 25 dmg melee<br>

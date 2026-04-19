@@ -24,9 +24,11 @@ export function getGroundMesh() {
 // Shared spawn-point pool per map — both player and NPC respawns pull from here
 const SPAWN_POINTS = {
   range: [
-    { x: -12, z: -12 }, { x: 12, z: -12 }, { x: -14, z: -28 }, { x: 14, z: -28 },
-    { x:  -6, z: -42 }, { x:  6, z: -42 }, { x: -22, z: -50 }, { x: 22, z: -50 },
-    { x:   0, z: -20 }, { x:   0, z: -36 },
+    // 8 points around the perimeter — N, NE, E, SE, S, SW, W, NW
+    { x:  0, z: -20 }, { x:  14, z: -14 },
+    { x: 20, z:   0 }, { x:  14, z:  14 },
+    { x:  0, z:  20 }, { x: -14, z:  14 },
+    { x: -20, z:  0 }, { x: -14, z: -14 },
   ],
   sandbox: [
     { x:   0, z:   0 }, { x:  12, z:  10 }, { x: -12, z:  10 },
@@ -41,6 +43,678 @@ export function getSpawnPoints(mapName = 'range') {
 export function pickRandomSpawn(mapName = 'range') {
   const pool = getSpawnPoints(mapName);
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// --- Post-apocalyptic road: asphalt base + aggregates + crack network with
+// loose rubble stones and grass tufts pushing through the cracks.
+//
+// Paired-heightmap strategy: as we draw the diffuse canvas, we also draw a
+// matching greyscale heightmap (recessed cracks, raised stones, slight tuft
+// bumps). At the end we convert heightmap → normal map so real light catches
+// the features instead of the floor looking flat.
+//
+// Returns { map, normalMap } — seamless, RepeatWrapping.
+export function buildRoadMaps(size = 512) {
+  const dCanvas = document.createElement('canvas');
+  dCanvas.width = dCanvas.height = size;
+  const dx = dCanvas.getContext('2d');
+
+  const hCanvas = document.createElement('canvas');
+  hCanvas.width = hCanvas.height = size;
+  const hx = hCanvas.getContext('2d');
+
+  // --- Base fills ---
+  dx.fillStyle = '#3e3b37'; // lighter warm grey
+  dx.fillRect(0, 0, size, size);
+  hx.fillStyle = 'rgb(128,128,128)'; // mid-grey = zero height
+  hx.fillRect(0, 0, size, size);
+
+  // Fine aggregate specks — diffuse only (too small to move normals)
+  for (let i = 0; i < 8000; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 0.4 + Math.random() * 1.3;
+    const g = 45 + Math.floor(Math.random() * 40);
+    dx.fillStyle = `rgb(${g},${g - 1},${g - 3})`;
+    dx.beginPath();
+    dx.arc(x, y, r, 0, Math.PI * 2);
+    dx.fill();
+  }
+
+  // Larger embedded aggregate stones — slight raise on heightmap
+  for (let i = 0; i < 400; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 1.5 + Math.random() * 3;
+    const g = 60 + Math.floor(Math.random() * 30);
+    dx.fillStyle = `rgba(${g},${g - 2},${g - 6},0.55)`;
+    dx.beginPath(); dx.arc(x, y, r, 0, Math.PI * 2); dx.fill();
+    const hGrad = hx.createRadialGradient(x, y, 0, x, y, r);
+    hGrad.addColorStop(0, 'rgba(160,160,160,0.7)');
+    hGrad.addColorStop(1, 'rgba(128,128,128,0)');
+    hx.fillStyle = hGrad;
+    hx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  // Dark wear patches (faded oil stains / tire marks) — diffuse only
+  for (let i = 0; i < 10; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 20 + Math.random() * 40;
+    const grad = dx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(15,14,12,0.22)');
+    grad.addColorStop(1, 'rgba(15,14,12,0)');
+    dx.fillStyle = grad;
+    dx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  // Cracks — compute paths once, render to both diffuse (dark line) and
+  // heightmap (wider darker line = recessed valley).
+  const crackPoints = [];
+  const primaryCracks = buildCrackPaths(18, size, { segRange: 45, margin: 0.05 });
+  for (const path of primaryCracks) {
+    drawPathOn(dx, path, 'rgba(10,8,6,0.8)', 1.4);
+    drawPathOn(hx, path, 'rgba(50,50,50,0.95)', 2.8);
+    // Sample a few points along the crack for grass seeding
+    for (let j = 1; j < path.length; j += 2) crackPoints.push(path[j]);
+  }
+  const hairlineCracks = buildCrackPaths(30, size, { segRange: 30, margin: 0 });
+  for (const path of hairlineCracks) {
+    drawPathOn(dx, path, 'rgba(20,17,14,0.55)', 0.7);
+    drawPathOn(hx, path, 'rgba(80,80,80,0.6)', 1.4);
+  }
+
+  // Rubble pebbles — raised on heightmap as bright radial domes
+  for (let i = 0; i < 40; i++) {
+    const x = size * 0.05 + Math.random() * size * 0.9;
+    const y = size * 0.05 + Math.random() * size * 0.9;
+    const r = 2 + Math.random() * 4;
+    drawRubbleStone(dx, hx, x, y, r);
+  }
+
+  // Grass tufts — mostly along cracks, occasional random placement
+  const grassCount = 22;
+  for (let i = 0; i < grassCount; i++) {
+    let x, y;
+    if (crackPoints.length > 0 && Math.random() < 0.7) {
+      const [px, py] = crackPoints[Math.floor(Math.random() * crackPoints.length)];
+      x = px + (Math.random() - 0.5) * 6;
+      y = py + (Math.random() - 0.5) * 6;
+    } else {
+      x = size * 0.08 + Math.random() * size * 0.84;
+      y = size * 0.08 + Math.random() * size * 0.84;
+    }
+    drawGrassTuft(dx, hx, x, y);
+  }
+
+  // --- Heightmap → normal map ---
+  const nCanvas = heightToNormal(hCanvas, 3.0);
+
+  const map = new THREE.CanvasTexture(dCanvas);
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
+
+  const normalMap = new THREE.CanvasTexture(nCanvas);
+  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
+  // normal maps are Linear, not sRGB — leave default colorSpace
+  normalMap.anisotropy = 8;
+
+  // Heightmap doubles as a displacement map so the ground plane's verts
+  // actually move up/down at stones/cracks — real 3D, not just fake shading.
+  const displacementMap = new THREE.CanvasTexture(hCanvas);
+  displacementMap.wrapS = displacementMap.wrapT = THREE.RepeatWrapping;
+  displacementMap.anisotropy = 8;
+
+  return { map, normalMap, displacementMap };
+}
+
+// --- Urban concrete wall: weathered slab with form-line seams, stains,
+// cracks, and missing-chunk recesses. Heightmap drives the normal map so
+// cracks catch shadow. Returns { map, normalMap } — seamless, repeat-wrap.
+export function buildUrbanWallMaps(size = 512) {
+  const dCanvas = document.createElement('canvas');
+  dCanvas.width = dCanvas.height = size;
+  const dx = dCanvas.getContext('2d');
+
+  const hCanvas = document.createElement('canvas');
+  hCanvas.width = hCanvas.height = size;
+  const hx = hCanvas.getContext('2d');
+
+  // Base — warm weathered concrete with per-variant base jitter
+  const baseR = 100 + Math.floor(Math.random() * 15);
+  const baseG = 95  + Math.floor(Math.random() * 15);
+  const baseB = 85  + Math.floor(Math.random() * 15);
+  dx.fillStyle = `rgb(${baseR},${baseG},${baseB})`;
+  dx.fillRect(0, 0, size, size);
+  hx.fillStyle = 'rgb(128,128,128)';
+  hx.fillRect(0, 0, size, size);
+
+  // One or two large dominant tonal patches — give each variant a distinctive
+  // mood (darker section / bleached section) so walls read as different.
+  const bigCount = 1 + (Math.random() < 0.5 ? 1 : 0);
+  for (let i = 0; i < bigCount; i++) {
+    const x = size * (0.2 + Math.random() * 0.6);
+    const y = size * (0.2 + Math.random() * 0.6);
+    const r = size * (0.3 + Math.random() * 0.25);
+    const grad = dx.createRadialGradient(x, y, 0, x, y, r);
+    const dark = Math.random() < 0.5;
+    grad.addColorStop(0, dark ? 'rgba(30,25,20,0.35)' : 'rgba(130,122,110,0.28)');
+    grad.addColorStop(1, dark ? 'rgba(30,25,20,0)'    : 'rgba(130,122,110,0)');
+    dx.fillStyle = grad;
+    dx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  // Small blotches for fine tonal variation layered on top
+  for (let i = 0; i < 30; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const r = 20 + Math.random() * 55;
+    const grad = dx.createRadialGradient(x, y, 0, x, y, r);
+    const dark = Math.random() < 0.5;
+    grad.addColorStop(0, dark ? 'rgba(50,46,40,0.14)' : 'rgba(95,90,82,0.12)');
+    grad.addColorStop(1, dark ? 'rgba(50,46,40,0)'    : 'rgba(95,90,82,0)');
+    dx.fillStyle = grad;
+    dx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  // Fine grit noise
+  for (let i = 0; i < 4000; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const g = 85 + Math.floor(Math.random() * 35);
+    dx.fillStyle = `rgba(${g},${g - 4},${g - 10},0.22)`;
+    dx.beginPath();
+    dx.arc(x, y, 0.3 + Math.random() * 1.0, 0, Math.PI * 2);
+    dx.fill();
+  }
+
+  // Vertical water stains — darker streaks trailing down from top
+  for (let i = 0; i < 8; i++) {
+    const x = 15 + Math.random() * (size - 30);
+    const topY = Math.random() * 30;
+    const botY = size * (0.3 + Math.random() * 0.6);
+    const streakW = 8 + Math.random() * 22;
+    const grad = dx.createLinearGradient(x, topY, x, botY);
+    grad.addColorStop(0,   'rgba(35,28,20,0.18)');
+    grad.addColorStop(0.5, 'rgba(40,32,22,0.22)');
+    grad.addColorStop(1,   'rgba(50,42,30,0)');
+    dx.fillStyle = grad;
+    dx.fillRect(x - streakW / 2, topY, streakW, botY - topY);
+  }
+
+  // Horizontal form lines — seams where concrete panels meet (recessed)
+  const panelBreaks = [size * 0.33, size * 0.67];
+  for (const y of panelBreaks) {
+    drawPathOn(dx, [[0, y], [size, y]], 'rgba(30,26,22,0.6)', 1.0);
+    drawPathOn(hx, [[0, y], [size, y]], 'rgba(78,78,78,0.75)', 2.4);
+  }
+
+  // Cracks — mix of vertical-ish and branching, kept in margin for seam safety
+  const crackEndpoints = [];
+  const cracks = buildCrackPaths(10, size, { segRange: 32, margin: 0.08 });
+  for (const path of cracks) {
+    drawPathOn(dx, path, 'rgba(10,8,6,0.78)', 1.2);
+    drawPathOn(hx, path, 'rgba(45,45,45,0.9)', 2.3);
+    // Sample a few mid-path points for plant placement (later feature)
+    for (let j = 1; j < path.length; j += 2) crackEndpoints.push(path[j]);
+  }
+
+  // Missing-chunk patches — small dark irregular recesses where concrete fell
+  for (let i = 0; i < 5; i++) {
+    const cx = size * 0.15 + Math.random() * size * 0.7;
+    const cy = size * 0.15 + Math.random() * size * 0.7;
+    const r = 7 + Math.random() * 12;
+    const n = 7 + Math.floor(Math.random() * 3);
+    const pts = [];
+    for (let j = 0; j < n; j++) {
+      const a = (j / n) * Math.PI * 2;
+      const rr = r * (0.6 + Math.random() * 0.5);
+      pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+    }
+    dx.fillStyle = 'rgba(18,15,12,0.85)';
+    dx.beginPath();
+    dx.moveTo(pts[0][0], pts[0][1]);
+    for (let j = 1; j < pts.length; j++) dx.lineTo(pts[j][0], pts[j][1]);
+    dx.closePath();
+    dx.fill();
+    hx.fillStyle = 'rgba(30,30,30,0.95)';
+    hx.beginPath();
+    hx.moveTo(pts[0][0], pts[0][1]);
+    for (let j = 1; j < pts.length; j++) hx.lineTo(pts[j][0], pts[j][1]);
+    hx.closePath();
+    hx.fill();
+  }
+
+  // Rust + mold stains — warm-rust or cool-olive blotches
+  for (let i = 0; i < 14; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const r = 5 + Math.random() * 12;
+    const mold = Math.random() < 0.4;
+    const grad = dx.createRadialGradient(x, y, 0, x, y, r);
+    if (mold) {
+      grad.addColorStop(0, 'rgba(70,80,40,0.28)');
+      grad.addColorStop(1, 'rgba(70,80,40,0)');
+    } else {
+      grad.addColorStop(0, 'rgba(95,55,30,0.26)');
+      grad.addColorStop(1, 'rgba(95,55,30,0)');
+    }
+    dx.fillStyle = grad;
+    dx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  const map = new THREE.CanvasTexture(dCanvas);
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
+
+  const nCanvas = heightToNormal(hCanvas, 2.5);
+  const normalMap = new THREE.CanvasTexture(nCanvas);
+  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
+  normalMap.anisotropy = 8;
+
+  return { map, normalMap };
+}
+
+// Scatter N instanced vine clumps along explicit positions (e.g. along a
+// wall's inner face). Taller and darker than grass; uses the same crossed-
+// plane alpha-cutout trick for one draw call across all instances.
+export function buildInstancedVines(scene, {
+  positions,          // array of { x, z, yaw? }; required
+  leafH = 0.55,
+  leafW = 0.4,
+  minScale = 0.85,
+  maxScale = 1.5,
+} = {}) {
+  if (!positions || positions.length === 0) return null;
+
+  // --- Vine-leaf alpha texture: clumped rounded leaves + trailing blades ---
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+
+  // A few overlapping leaf silhouettes. Darker forest greens, yellow accents.
+  const leaves = 10;
+  for (let i = 0; i < leaves; i++) {
+    const cx = 15 + Math.random() * (size - 30);
+    const cy = 15 + Math.random() * (size - 30);
+    const lw = 6 + Math.random() * 10;
+    const lh = 10 + Math.random() * 16;
+    const rot = (Math.random() - 0.5) * Math.PI;
+    const r = (55 + Math.random() * 30) | 0;
+    const g = (90 + Math.random() * 45) | 0;
+    const b = (35 + Math.random() * 25) | 0;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, lw, lh, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Vein — darker midline
+    ctx.strokeStyle = `rgba(${r - 20},${g - 25},${b - 10},0.7)`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(0, -lh * 0.9);
+    ctx.lineTo(0, lh * 0.9);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // A few trailing thin blades between leaves for variety
+  for (let i = 0; i < 4; i++) {
+    const baseX = 20 + Math.random() * (size - 40);
+    const topY = 8 + Math.random() * 10;
+    const botY = size - 6;
+    const w = 3 + Math.random() * 3;
+    const g = (100 + Math.random() * 25) | 0;
+    ctx.fillStyle = `rgb(60,${g},40)`;
+    ctx.beginPath();
+    ctx.moveTo(baseX - w / 2, botY);
+    ctx.lineTo(baseX + w / 2, botY);
+    ctx.lineTo(baseX + 0.8, topY);
+    ctx.lineTo(baseX - 0.8, topY);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  // Crossed-plane geometry, anchored at bottom
+  const w = leafW, h = leafH;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array([
+    -w / 2, 0, 0,   w / 2, 0, 0,   w / 2, h, 0,   -w / 2, h, 0,
+    0, 0, -w / 2,   0, 0, w / 2,   0, h, w / 2,   0, h, -w / 2,
+  ]);
+  const uvs = new Float32Array([
+    0, 0, 1, 0, 1, 1, 0, 1,
+    0, 0, 1, 0, 1, 1, 0, 1,
+  ]);
+  const idx = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    alphaTest: 0.5,
+    transparent: false,
+    side: THREE.DoubleSide,
+    roughness: 0.9,
+    metalness: 0,
+  });
+
+  const mesh = new THREE.InstancedMesh(geo, mat, positions.length);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const s = new THREE.Vector3();
+  const p = new THREE.Vector3();
+  for (let i = 0; i < positions.length; i++) {
+    const { x, z, yaw } = positions[i];
+    const scale = minScale + Math.random() * (maxScale - minScale);
+    s.set(scale, scale * (0.9 + Math.random() * 0.25), scale);
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0),
+      yaw != null ? yaw + (Math.random() - 0.5) * 0.5 : Math.random() * Math.PI * 2);
+    p.set(x, 0, z);
+    m.compose(p, q, s);
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh);
+  return mesh;
+}
+
+// Scatter N instanced grass tufts as crossed-plane billboards. Each tuft is
+// two vertical planes at right angles with an alpha-masked blade texture, so
+// it reads as 3D from every angle. Rendered via alphaTest (binary cutout) —
+// no transparency sorting cost. One draw call for all tufts.
+export function buildInstancedGrass(scene, {
+  count = 700,
+  halfExtent = 50,
+  bladeW = 0.22,
+  bladeH = 0.25,
+  minScale = 0.8,
+  maxScale = 1.4,
+} = {}) {
+  // --- Procedural grass-blade alpha/color texture ---
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  const blades = 6;
+  for (let i = 0; i < blades; i++) {
+    const baseX = 10 + (i / blades) * (size - 20) + (Math.random() - 0.5) * 10;
+    const tipX  = baseX + (Math.random() - 0.5) * 14;
+    const baseY = size - 4;
+    const tipY  = 18 + Math.random() * 28;
+    const baseW = 4 + Math.random() * 3;
+    const fresh = Math.random() < 0.35;
+    const r = (fresh ? 60 + Math.random() * 25 : 95  + Math.random() * 30) | 0;
+    const g = (fresh ? 130 + Math.random() * 30 : 105 + Math.random() * 25) | 0;
+    const b = (30 + Math.random() * 20) | 0;
+    // Tapered blade: wide bottom, pointy top
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.beginPath();
+    ctx.moveTo(baseX - baseW / 2, baseY);
+    ctx.lineTo(baseX + baseW / 2, baseY);
+    ctx.lineTo(tipX + 0.8, tipY);
+    ctx.lineTo(tipX - 0.8, tipY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  // --- Crossed-plane geometry, anchored at bottom so tufts sit on the ground ---
+  const w = bladeW, h = bladeH;
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array([
+    // Plane A — facing +Z
+    -w / 2, 0, 0,   w / 2, 0, 0,   w / 2, h, 0,   -w / 2, h, 0,
+    // Plane B — facing +X (rotated 90° around Y)
+    0, 0, -w / 2,   0, 0, w / 2,   0, h, w / 2,   0, h, -w / 2,
+  ]);
+  const uvs = new Float32Array([
+    0, 0,  1, 0,  1, 1,  0, 1,
+    0, 0,  1, 0,  1, 1,  0, 1,
+  ]);
+  const indices = [
+    0, 1, 2, 0, 2, 3,
+    4, 5, 6, 4, 6, 7,
+  ];
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    alphaTest: 0.5,           // binary cutout — no transparency cost
+    transparent: false,
+    side: THREE.DoubleSide,   // blades visible from behind
+    roughness: 0.95,
+    metalness: 0.0,
+  });
+
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  mesh.castShadow = false;     // shadow pass is expensive — leaves don't need it
+  mesh.receiveShadow = true;
+
+  const m = new THREE.Matrix4();
+  const rot = new THREE.Quaternion();
+  const scl = new THREE.Vector3();
+  const pos = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    const x = (Math.random() - 0.5) * halfExtent * 2;
+    const z = (Math.random() - 0.5) * halfExtent * 2;
+    const s = minScale + Math.random() * (maxScale - minScale);
+    scl.set(s, s * (0.85 + Math.random() * 0.35), s);
+    rot.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * Math.PI * 2);
+    pos.set(x, 0, z);
+    m.compose(pos, rot, scl);
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh);
+  return mesh;
+}
+
+// Scatter N instanced stone chunks across a rectangle on the XZ plane.
+// Real geometry with variable rotation/scale — sharp silhouettes and proper
+// shadow casting, unlike anything painted into the floor texture.
+export function buildInstancedStones(scene, {
+  count = 300,
+  halfExtent = 50,
+  minScale = 0.08,
+  maxScale = 0.28,
+  color = 0x7a7064,
+} = {}) {
+  const geo = new THREE.IcosahedronGeometry(1, 0);
+  const mat = new THREE.MeshStandardMaterial({
+    color, roughness: 0.95, metalness: 0.03, flatShading: true,
+  });
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const m = new THREE.Matrix4();
+  const rot = new THREE.Quaternion();
+  const scl = new THREE.Vector3();
+  const pos = new THREE.Vector3();
+  const euler = new THREE.Euler();
+  for (let i = 0; i < count; i++) {
+    const x = (Math.random() - 0.5) * halfExtent * 2;
+    const z = (Math.random() - 0.5) * halfExtent * 2;
+    const base = minScale + Math.random() * (maxScale - minScale);
+    // Flatten non-uniformly so stones look like weathered rubble chunks
+    scl.set(base * (0.85 + Math.random() * 0.4),
+            base * (0.45 + Math.random() * 0.3),
+            base * (0.85 + Math.random() * 0.4));
+    euler.set(
+      (Math.random() - 0.5) * 0.4,
+      Math.random() * Math.PI * 2,
+      (Math.random() - 0.5) * 0.4,
+    );
+    rot.setFromEuler(euler);
+    pos.set(x, scl.y * 0.25, z); // sit slightly embedded so they don't float
+    m.compose(pos, rot, scl);
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh);
+  return mesh;
+}
+
+function buildCrackPaths(count, size, { segRange, margin }) {
+  const paths = [];
+  for (let i = 0; i < count; i++) {
+    const pts = [];
+    let cx = size * margin + Math.random() * size * (1 - margin * 2);
+    let cy = size * margin + Math.random() * size * (1 - margin * 2);
+    pts.push([cx, cy]);
+    const segs = 4 + Math.floor(Math.random() * 8);
+    for (let j = 0; j < segs; j++) {
+      cx += (Math.random() - 0.5) * segRange;
+      cy += (Math.random() - 0.5) * segRange;
+      pts.push([cx, cy]);
+    }
+    paths.push(pts);
+  }
+  return paths;
+}
+
+function drawPathOn(ctx, pts, stroke, width) {
+  if (pts.length < 2) return;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.stroke();
+}
+
+function drawRubbleStone(dx, hx, cx, cy, r) {
+  // Irregular rounded polygon — 6-9 vertices perturbed from a circle.
+  const n = 6 + Math.floor(Math.random() * 4);
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = r * (0.75 + Math.random() * 0.45);
+    pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+  }
+  // Diffuse — base fill
+  const base = 90 + Math.floor(Math.random() * 45);
+  const tint = Math.random() < 0.5 ? -5 : 5;
+  dx.fillStyle = `rgb(${base},${base - 2},${base - 8 + tint})`;
+  dx.beginPath();
+  dx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) dx.lineTo(pts[i][0], pts[i][1]);
+  dx.closePath();
+  dx.fill();
+  // Diffuse — directional shade so the lit/dark sides read even without normal
+  const shade = dx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+  shade.addColorStop(0, 'rgba(255,250,240,0.2)');
+  shade.addColorStop(1, 'rgba(0,0,0,0.35)');
+  dx.fillStyle = shade;
+  dx.beginPath();
+  dx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) dx.lineTo(pts[i][0], pts[i][1]);
+  dx.closePath();
+  dx.fill();
+  // Heightmap — raised radial dome so light catches the stone properly
+  const hGrad = hx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.1);
+  hGrad.addColorStop(0, 'rgba(220,220,220,0.9)');
+  hGrad.addColorStop(0.7, 'rgba(170,170,170,0.6)');
+  hGrad.addColorStop(1, 'rgba(128,128,128,0)');
+  hx.fillStyle = hGrad;
+  hx.fillRect(cx - r * 1.2, cy - r * 1.2, r * 2.4, r * 2.4);
+}
+
+function drawGrassTuft(dx, hx, cx, cy) {
+  // Diffuse: soft ground shadow first, then blades on top.
+  const sgrad = dx.createRadialGradient(cx, cy + 1, 0, cx, cy + 1, 5);
+  sgrad.addColorStop(0, 'rgba(0,0,0,0.3)');
+  sgrad.addColorStop(1, 'rgba(0,0,0,0)');
+  dx.fillStyle = sgrad;
+  dx.fillRect(cx - 6, cy - 4, 12, 10);
+
+  const bladeCount = 7 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < bladeCount; i++) {
+    const fresh = Math.random() < 0.3;
+    const rCol = fresh ? 70 + Math.random() * 25 : 100 + Math.random() * 35;
+    const gCol = fresh ? 120 + Math.random() * 35 : 95 + Math.random() * 25;
+    const bCol = 35 + Math.random() * 25;
+    dx.strokeStyle = `rgba(${rCol | 0},${gCol | 0},${bCol | 0},${0.7 + Math.random() * 0.3})`;
+    dx.lineWidth = 0.6 + Math.random() * 0.5;
+
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.8;
+    const len = 3 + Math.random() * 5;
+    const sx = cx + (Math.random() - 0.5) * 1.6;
+    const sy = cy + (Math.random() - 0.5) * 1.6;
+    const ex = cx + Math.cos(a) * len;
+    const ey = cy + Math.sin(a) * len;
+    dx.beginPath();
+    dx.moveTo(sx, sy);
+    dx.quadraticCurveTo(
+      cx + Math.cos(a) * len * 0.5 + (Math.random() - 0.5) * 2,
+      cy + Math.sin(a) * len * 0.5 + (Math.random() - 0.5) * 2,
+      ex, ey,
+    );
+    dx.stroke();
+  }
+
+  // Heightmap: small raised mound under the tuft so the grass reads as a clump
+  const hGrad = hx.createRadialGradient(cx, cy, 0, cx, cy, 5);
+  hGrad.addColorStop(0, 'rgba(165,165,165,0.7)');
+  hGrad.addColorStop(1, 'rgba(128,128,128,0)');
+  hx.fillStyle = hGrad;
+  hx.fillRect(cx - 6, cy - 6, 12, 12);
+}
+
+// Greyscale-heightmap → tangent-space normal map via central differences.
+// Tileable: samples wrap around the canvas edges, so the resulting normal
+// map stays seamless when the diffuse does.
+function heightToNormal(heightCanvas, strength = 3.0) {
+  const w = heightCanvas.width, h = heightCanvas.height;
+  const hData = heightCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const oCtx = out.getContext('2d');
+  const oData = oCtx.createImageData(w, h);
+
+  for (let y = 0; y < h; y++) {
+    const yu = (y - 1 + h) % h;
+    const yd = (y + 1) % h;
+    for (let x = 0; x < w; x++) {
+      const xl = (x - 1 + w) % w;
+      const xr = (x + 1) % w;
+      const hL = hData[(y * w + xl) * 4] / 255;
+      const hR = hData[(y * w + xr) * 4] / 255;
+      const hU = hData[(yu * w + x) * 4] / 255;
+      const hD = hData[(yd * w + x) * 4] / 255;
+      const dx = (hR - hL) * strength;
+      // Three.js uses OpenGL normal convention (green = +Y up in tangent space
+      // but the texture's Y axis flips vertically, so we negate dy here).
+      const dy = (hU - hD) * strength;
+      const nx = -dx, ny = -dy, nz = 1;
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      const idx = (y * w + x) * 4;
+      oData.data[idx    ] = ((nx / len) * 0.5 + 0.5) * 255;
+      oData.data[idx + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+      oData.data[idx + 2] = ((nz / len) * 0.5 + 0.5) * 255;
+      oData.data[idx + 3] = 255;
+    }
+  }
+  oCtx.putImageData(oData, 0, 0);
+  return out;
 }
 
 // --- Procedural asphalt texture ---

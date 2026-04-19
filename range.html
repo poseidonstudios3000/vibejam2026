@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RANGE — MANA FIGHT</title>
+  <title>MAP 1 — MANA FIGHT</title>
+  <!-- Vibe Jam 2026 widget (REQUIRED for entry tracking) -->
+  <script async src="https://vibej.am/2026/widget.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -30,10 +32,50 @@
       font-family: 'Courier New', monospace; color: #ff8833;
     }
 
-    #label {
-      position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-      font-size: 13px; letter-spacing: 3px; text-transform: uppercase; opacity: 0.7;
+    /* MANA FIGHT wordmark centered at the top — sits above the map label. */
+    #logo-top {
+      position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
+      width: 220px; height: auto; opacity: 0.9;
+      filter: drop-shadow(0 0 18px rgba(204, 34, 51, 0.35));
+      pointer-events: none; z-index: 10;
     }
+
+    #label {
+      position: absolute; top: 128px; left: 50%; transform: translateX(-50%);
+      font-size: 11px; letter-spacing: 5px; text-transform: uppercase;
+      opacity: 0.55; font-weight: bold;
+    }
+
+    /* Vital bars — stacked bottom-left. HP/Mana/Stamina, color-coded. */
+    #vital-bars {
+      position: absolute; bottom: 64px; left: 16px;
+      display: flex; flex-direction: column; gap: 5px;
+      pointer-events: none; z-index: 12;
+    }
+    .vital-bar {
+      width: 280px; height: 22px;
+      background: rgba(0,0,0,0.72);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 3px;
+      position: relative; overflow: hidden;
+      font-family: 'Courier New', monospace; font-size: 11px;
+      color: #fff;
+    }
+    .vital-bar .fill {
+      position: absolute; inset: 0;
+      transform-origin: left center;
+      transition: transform 0.15s ease-out;
+    }
+    .vital-bar .label, .vital-bar .value {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      z-index: 2; letter-spacing: 1px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    }
+    .vital-bar .label { left: 10px; font-weight: bold; }
+    .vital-bar .value { right: 10px; opacity: 0.92; }
+    .vital-bar.hp      .fill { background: linear-gradient(90deg, #8a1824, #cc2233 60%, #ff5566); }
+    .vital-bar.mana    .fill { background: linear-gradient(90deg, #1e4a8a, #4488ff 60%, #66aaff); }
+    .vital-bar.stamina .fill { background: linear-gradient(90deg, #8a5a15, #ffaa33 60%, #ffcc66); }
 
     /* Shared crosshair with the Aim / Arena tabs */
     #crosshair {
@@ -121,7 +163,7 @@
 <body>
   <div id="nav-tabs">
     <a href="/">Play</a>
-    <a href="/range.html" class="active">Range</a>
+    <a href="/range.html" class="active">Map 1</a>
     <a href="/dev.html">Movement</a>
     <a href="/lab.html">Model Lab</a>
     <a href="/aim.html">Aim</a>
@@ -129,7 +171,8 @@
   </div>
 
   <div id="hud">
-    <div id="label">Range</div>
+    <img id="logo-top" src="/assets/mana-fight-logo.png" alt="MANA FIGHT">
+    <div id="label">Map 1</div>
 
     <div id="scope"></div>
     <div id="crosshair">
@@ -144,12 +187,28 @@
     <div id="click-prompt">Click to play &nbsp;·&nbsp; LMB fires &nbsp;·&nbsp; RMB zoom</div>
 
     <div id="telemetry">
-      <div class="row"><span>CLASS</span><span class="v" id="t-class">—</span></div>
-      <div class="row"><span>SLOT</span><span class="v" id="t-slot">—</span></div>
-      <div class="row"><span>HP</span><span class="v" id="t-hp">—</span></div>
       <div class="row"><span>KILLS</span><span class="v" id="t-kills">0</span></div>
       <div class="row"><span>ALIVE</span><span class="v" id="t-alive">0</span></div>
       <div class="row"><span>PEERS</span><span class="v" id="t-peers">0</span></div>
+      <div class="row"><span>FPS</span><span class="v" id="t-fps">—</span></div>
+    </div>
+
+    <div id="vital-bars">
+      <div class="vital-bar hp">
+        <div class="fill" id="bar-hp-fill"></div>
+        <span class="label">HP</span>
+        <span class="value" id="bar-hp-val">—</span>
+      </div>
+      <div class="vital-bar mana">
+        <div class="fill" id="bar-mana-fill"></div>
+        <span class="label">MANA</span>
+        <span class="value" id="bar-mana-val">—</span>
+      </div>
+      <div class="vital-bar stamina">
+        <div class="fill" id="bar-stamina-fill"></div>
+        <span class="label">STAMINA</span>
+        <span class="value" id="bar-stamina-val">—</span>
+      </div>
     </div>
 
     <div id="class-pills">

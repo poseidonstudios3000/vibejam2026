@@ -833,7 +833,7 @@ function performMelee(damageFactor = 1.0, side = 0) {
 function spawnMeleeVFX(side = 0, srcPos = pos, srcYaw = yaw, srcClassId = classId) {
   if (!sceneRef) return;
   const srcClassDef = CLASS_DEFS[srcClassId] ?? classDef;
-  const colors = { knight: 0xcc8855, archer: 0xaaaacc, mage: 0xaa66ff, rogue: 0x4488ff };
+  const colors = { knight: 0xcc2233, archer: 0x88cc44, mage: 0xaa66ff, rogue: 0x4488ff };
   const color = srcClassDef.melee?.vfxColor ?? colors[srcClassId] ?? 0xffffff;
 
   // Build arc as a flat fan mesh in XZ plane, centered on player forward.
@@ -1129,7 +1129,7 @@ function spawnSmokeBombVFX(position) {
 
 // --- Projectiles ---
 function getClassProjectileColor() {
-  const colors = { knight: 0xcc8855, archer: 0x88cc44, mage: 0xaa66ff, rogue: 0xaaaacc };
+  const colors = { knight: 0xcc2233, archer: 0x88cc44, mage: 0xaa66ff, rogue: 0x4488ff };
   return colors[classId] || 0xffcc00;
 }
 
@@ -1602,28 +1602,36 @@ function damagePlayer(amount) {
   if (playerHP <= 0) { playerHP = 0; respawnPlayer(); }
 }
 
-// Pick a spawn point at least `minDist` m from every living NPC. If none
-// qualifies, return the spawn with the largest min-distance (least crowded).
-// Adds a bit of randomness among equally-safe candidates so respawn isn't
-// always the same corner.
-function pickSafeSpawn(mapName, minDist = 6) {
+// Caller (e.g. range.js) can register a function that returns the current
+// peer positions, so spawn-picking avoids landing on top of other players.
+let peerPositionProvider = null;
+export function setPeerPositionProvider(fn) { peerPositionProvider = fn; }
+
+// Pick a spawn point at least `minDist` m from every living NPC and every
+// known peer. If none qualifies, return the spawn with the largest
+// min-distance (least crowded). A bit of randomness among equally-safe
+// candidates so respawn isn't always the same corner.
+export function pickSafeSpawn(mapName, minDist = 6) {
   const spawns = getSpawnPoints(mapName);
+  const avoid = [];
   const npcMeshes = getNPCHitboxes();
-  const livingNpcs = [];
   const seen = new Set();
   for (const m of npcMeshes) {
     const npc = m.userData.npcRef;
     if (!npc || npc.dead || seen.has(npc)) continue;
     seen.add(npc);
-    livingNpcs.push(npc);
+    avoid.push({ x: npc.mesh.position.x, z: npc.mesh.position.z });
   }
-  if (livingNpcs.length === 0) return spawns[Math.floor(Math.random() * spawns.length)];
+  if (peerPositionProvider) {
+    for (const p of peerPositionProvider()) avoid.push(p);
+  }
+  if (avoid.length === 0) return spawns[Math.floor(Math.random() * spawns.length)];
 
   const scored = spawns.map((sp) => {
     let md = Infinity;
-    for (const npc of livingNpcs) {
-      const dx = npc.mesh.position.x - sp.x;
-      const dz = npc.mesh.position.z - sp.z;
+    for (const p of avoid) {
+      const dx = p.x - sp.x;
+      const dz = p.z - sp.z;
       const d = Math.sqrt(dx * dx + dz * dz);
       if (d < md) md = d;
     }

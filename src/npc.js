@@ -82,10 +82,10 @@ const NPC_CLASSES = ['knight', 'archer', 'mage', 'rogue'];
 
 // Class-specific projectile colors
 const PROJECTILE_COLORS = {
-  knight: { outer: 0xcc6622, inner: 0xffaa44 },
+  knight: { outer: 0xcc2233, inner: 0xff6677 },
   archer: { outer: 0x88cc44, inner: 0xccff88 },
   mage:   { outer: 0x8844cc, inner: 0xcc88ff },
-  rogue:  { outer: 0xaaaacc, inner: 0xffffff },
+  rogue:  { outer: 0x4488ff, inner: 0xaaccff },
 };
 
 // Melee range threshold — NPCs prefer melee when this close
@@ -114,10 +114,12 @@ const SPAWNS_SANDBOX = [
 // Range map — wide, open firing field. NPCs spread out so the player has a
 // clear approach vector and can practice at varied distances.
 const SPAWNS_RANGE = [
-  { x: -8, z: -10 }, { x:  8, z: -10 },
-  { x: -14, z: -22 }, { x:  14, z: -22 },
-  { x: -4, z: -34 }, { x:  4, z: -34 },
-  { x: -20, z: -45 }, { x:  20, z: -45 },
+  // 8 points around the arena — matched to the player spawn ring so NPCs and
+  // players start evenly distributed rather than crammed into one half.
+  { x:  0, z: -20 }, { x:  14, z: -14 },
+  { x: 20, z:   0 }, { x:  14, z:  14 },
+  { x:  0, z:  20 }, { x: -14, z:  14 },
+  { x: -20, z:  0 }, { x: -14, z: -14 },
 ];
 
 const SPAWNS_BY_MAP = {
@@ -486,10 +488,10 @@ function performNPCMelee(npc, target) {
 function spawnNPCMeleeVFX(npc) {
   if (!sceneRef) return;
   const colors = {
-    knight: 0xcc8855,
-    archer: 0xaaaacc,
+    knight: 0xcc2233,
+    archer: 0x88cc44,
     mage: 0xaa66ff,
-    rogue: 0xcc2233,
+    rogue: 0x4488ff,
   };
   const color = colors[npc.classId] || 0xffffff;
   const range = npc.classDef.melee.range;
