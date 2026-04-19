@@ -71,6 +71,46 @@ export const themes = {
     rampColor: 0xbba585,
   },
 
+  // --- DARK: midnight sky, cool moonlight ambient — moody night arena ---
+  dark: {
+    sky: ['#020510', '#050920', '#0a1030', '#152040'],
+    fog: 0x050b20,
+    fogDensity: 0.004,
+    ground: 0x1a2030,
+    grid1: 0x2a3040,
+    grid2: 0x202838,
+    ambient: 0x334466,
+    ambientIntensity: 0.75,
+    sunColor: 0x7788cc,
+    sunIntensity: 1.1,
+    labelColor: '#88aadd',
+    hudAccent: '#88aadd',
+    wallColor: 0x2a3444,
+    coverColor: 0x243040,
+    platColor: 0x344050,
+    rampColor: 0x405060,
+  },
+
+  // --- MAGIC: violet aurora sky, mystical ambient — MANA FIGHT flavor ---
+  magic: {
+    sky: ['#1a0833', '#3a1055', '#5a2288', '#8844cc'],
+    fog: 0x2a1544,
+    fogDensity: 0.003,
+    ground: 0x3a2a55,
+    grid1: 0x5a4080,
+    grid2: 0x4a3370,
+    ambient: 0xaa88dd,
+    ambientIntensity: 1.15,
+    sunColor: 0xccaaff,
+    sunIntensity: 1.7,
+    labelColor: '#eecbff',
+    hudAccent: '#eecbff',
+    wallColor: 0x6a4a90,
+    coverColor: 0x5a3e80,
+    platColor: 0x7a55a0,
+    rampColor: 0x8a65b0,
+  },
+
   // --- VOID: deep black with neon accent pops, high contrast dark mode.
   //     Nearly black environment, characters and spells glow intensely ---
   void: {

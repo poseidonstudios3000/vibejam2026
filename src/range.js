@@ -75,6 +75,23 @@ scene.add(ground);
 // Skip lightRefs.ground so theme color doesn't overwrite the texture tint.
 applyArenaTheme(scene, settings.colorTheme, { sun: lightRefs.sun, ambient: lightRefs.ambient });
 
+// --- Sky picker — frost (default) / dark / magic. Active pill is
+// highlighted; clicking another pill switches the scene's atmosphere.
+// Ground isn't passed so the road texture stays untinted across themes.
+document.querySelectorAll('#sky-picker .sky-pill').forEach((pill) => {
+  if (pill.dataset.sky === settings.colorTheme) pill.classList.add('active');
+  pill.addEventListener('click', () => {
+    const name = pill.dataset.sky;
+    applyArenaTheme(scene, name, { sun: lightRefs.sun, ambient: lightRefs.ambient });
+    document.querySelectorAll('#sky-picker .sky-pill').forEach((p) =>
+      p.classList.toggle('active', p.dataset.sky === name));
+  });
+});
+
+// --- Version stamp — injected at build time by vite.config.js ---
+const verEl = document.getElementById('version');
+if (verEl) verEl.textContent = `v${__APP_VERSION__} · ${__GIT_SHA__}`;
+
 // Real 3D debris scatter — hundreds of real meshes, 2 draw calls total.
 // Density preserved per m² so the 50×50 arena doesn't feel sparse.
 buildInstancedStones(scene, { count: 250, halfExtent: 24 });
